@@ -1,24 +1,19 @@
+/*
+ * Adapted from Comet's SpeedmineTiming (THM Addons, GPL-3.0-only) by Boyonabike on 2026-11-14.
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package dev.argus.client.modules.player;
 
-/** SpeedMine's tick pacing and delays, free of the client so it can be unit tested. */
+/** SpeedMine's server-tick pacing and start budget, free of the client so it can be unit tested. */
 final class SpeedMineTiming {
-   /** Vanilla's pause between breaks, skipped by NoBreakDelay. */
-   static final long BREAK_DELAY_MILLIS = 250L;
+   /** Most block starts that can be banked while TPS is low. */
+   static final double MAX_START_CREDIT = 2.0;
+
    /** Instant rebreaks with Alternative on 2b2t-style servers never go below this delay. */
    static final float MIN_2B2T_INSTANT_DELAY = 0.1F;
 
    private SpeedMineTiming() {
-   }
-
-   /** Per-tick progress multiplier: server TPS when synced, divided by the client timer speed. */
-   static float progressScale(boolean tpsSync, float tickRateScale, float timerMultiplier) {
-      float scale = tpsSync ? tickRateScale : 1.0F;
-      return scale * (1.0F / timerMultiplier);
-   }
-
-   /** The vanilla break delay applies unless NoBreakDelay is on or it has already elapsed. */
-   static boolean isBreakDelayActive(boolean noBreakDelay, boolean delayElapsed) {
-      return !noBreakDelay && !delayElapsed;
    }
 
    /** The instant-rebreak delay in seconds, raised to the 2b2t floor when Alternative is in use there. */
@@ -43,18 +38,5 @@ final class SpeedMineTiming {
    /** At full TPS, with an unknown TPS, or with sync off, a start never waits for credit. */
    static boolean canStart(boolean tpsSync, float tps, double credit) {
       return !tpsSync || !Float.isFinite(tps) || tps >= 20.0F || credit >= 1.0;
-   }
-
-   /** Credit left after a start; only TPS sync spends it. */
-   static double spendStartCredit(boolean tpsSync, double credit) {
-      return tpsSync ? Math.max(0.0, credit - 1.0) : credit;
-   }
-
-   /** Most block starts that can be banked while TPS is low. */
-   static final double MAX_START_CREDIT = 2.0;
-
-   /** Progress as a 0-1 fraction of the damage threshold, for rendering. */
-   static float renderProgress(float progress, float damage) {
-      return Math.clamp(progress / damage, 0.0F, 1.0F);
    }
 }

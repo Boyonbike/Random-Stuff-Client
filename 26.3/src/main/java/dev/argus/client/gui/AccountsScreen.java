@@ -13,10 +13,13 @@ public final class AccountsScreen extends ProfileManagerScreen {
     private static final long CONFIRM_NANOS = 3_000_000_000L;
     private AccountEntry.Type adding;
     private final UiInput credential = new UiInput(0, 0, 100, 12, "Username / account token");
+    private final UiInput lobbyPassword = new UiInput(0, 0, 100, 12, "Password AutoLobby sends with /login").secret(true);
+    /** The cracked account whose AutoLobby password is being edited, or null. */
+    private AccountEntry passwordFor;
     private String link = "", deleting;
     private long deleteAt;
 
-    public AccountsScreen(Screen parent) { super("Accounts", parent); credential.setMaxLength(8192); }
+    public AccountsScreen(Screen parent) { super("Accounts", parent); credential.setMaxLength(8192); lobbyPassword.setMaxLength(64); }
 
     // ---- header, footer, toolbar ---------------------------------------------------------------
 
@@ -33,8 +36,8 @@ public final class AccountsScreen extends ProfileManagerScreen {
     // ---- add form / Microsoft sign-in card ------------------------------------------------------
 
     private boolean signingIn() { return busy && !link.isEmpty(); }
-    @Override protected boolean formOpen() { return adding != null || signingIn(); }
-    @Override protected void closeForm() { adding = null; credential.setValue(""); }
+    @Override protected boolean formOpen() { return adding != null || passwordFor != null || signingIn(); }
+    @Override protected void closeForm() { adding = null; passwordFor = null; credential.setValue(""); lobbyPassword.setValue(""); }
 
     @Override protected void buildForm(int x, int y, int w) {
         if (signingIn()) {
@@ -43,10 +46,17 @@ public final class AccountsScreen extends ProfileManagerScreen {
             button(x + w - 16 - bw * 2, y + 44, bw, "Open link", null, () -> Blaze3D.openUri(URI.create(link)), true, true);
             return;
         }
-        field(credential, x + 10, y + 50, w - 20);
+        field(passwordFor != null ? lobbyPassword : credential, x + 10, y + 50, w - 20);
     }
 
     @Override protected void submitForm() {
+        if (passwordFor != null && !busy) {
+            var account = passwordFor;
+            String password = lobbyPassword.getValue();
+            change(() -> { profiles.setLobbyPassword(account.id(), password); closeForm(); },
+                    password.isBlank() ? "Cleared the lobby password for " + account.username() + "." : "Saved the lobby password for " + account.username() + ".");
+            return;
+        }
         if (adding == null || busy) return;
         try { login(adding == AccountEntry.Type.OFFLINE ? AccountEntry.offline(credential.getValue()) : adding == AccountEntry.Type.SESSION ? AccountEntry.session(credential.getValue()) : AccountEntry.altening(credential.getValue())); }
         catch (IllegalArgumentException e) { error(e.getMessage()); }
@@ -57,6 +67,14 @@ public final class AccountsScreen extends ProfileManagerScreen {
         if (signingIn()) {
             UiDraw.card(g, x, y, w, 74, "player", "Sign in with Microsoft", "Finish signing in in your browser, then come back here", 0, t);
             UiDraw.text(g, UiDraw.fit(link, w - 220, UiDraw.SMALL), x + 10, y + 55, UiDraw.SMALL, t.blue());
+            return;
+        }
+        if (passwordFor != null) {
+            UiDraw.card(g, x, y, w, 72, "shield", "Lobby password · " + passwordFor.username(), "AutoLobby sends /login with this when you play as this account", 120, t);
+            float right = x + w - 10;
+            right -= pill(g, "Cancel", right, y + 15, mx, my, t.muted(), false, !busy, () -> { closeForm(); rebuildWidgets(); }) + 4;
+            pill(g, "Save", right, y + 15, mx, my, t.accent(), true, !busy, this::submitForm);
+            label(g, "Stored on this computer · leave empty and save to clear it", x + 10, y + 38);
             return;
         }
         String title = switch (adding) { case OFFLINE -> "Add cracked account"; case SESSION -> "Add session account"; default -> "Add Altening account"; };
@@ -72,8 +90,15 @@ public final class AccountsScreen extends ProfileManagerScreen {
         label(g, adding == AccountEntry.Type.OFFLINE ? "Username · 1–16 letters, digits or underscores" : "Account token · stored on this computer", x + 10, y + 38);
     }
 
+    private void passwordForm(AccountEntry account) {
+        adding = null; passwordFor = account; message = "";
+        String saved = profiles.lobbyPassword(account);
+        lobbyPassword.setValue(saved == null ? "" : saved);
+        rebuildWidgets(); setFocused(lobbyPassword);
+    }
+
     private void addForm(AccountEntry.Type type) {
-        adding = type; credential.secret(type != AccountEntry.Type.OFFLINE); credential.setValue(""); message = "";
+        passwordFor = null; adding = type; credential.secret(type != AccountEntry.Type.OFFLINE); credential.setValue(""); message = "";
         rebuildWidgets(); setFocused(credential);
     }
 
@@ -124,9 +149,13 @@ public final class AccountsScreen extends ProfileManagerScreen {
         }) + 4;
         String loginLabel = active ? "Log in again" : "Log in";
         right -= pill(g, loginLabel, right, cy, mx, my, t.accent(), true, !busy, () -> login(account)) + 4;
+        boolean hasLobbyPassword = profiles.lobbyPassword(account) != null;
+        if (account.type() == AccountEntry.Type.OFFLINE)
+            right -= pill(g, hasLobbyPassword ? "Lobby password" : "Set lobby password", right, cy, mx, my, t.muted(), false, !busy, () -> passwordForm(account)) + 4;
         float textX = x + 30, room = right - textX - 6;
         UiDraw.bold(g, UiDraw.fit(account.username(), room), textX, cy - 5, UiDraw.TEXT, active ? t.accent() : t.text());
         float cw = chip(g, typeName(account.type()), textX, cy + 6.5f, typeColour(account.type(), t));
+        if (hasLobbyPassword) cw += chip(g, "AutoLobby", textX + cw + 4, cy + 6.5f, t.green()) + 4;
         if (!account.uuid().isEmpty()) UiDraw.text(g, UiDraw.fit(account.uuid(), room - cw - 6, 5.5f), textX + cw + 5, cy + 6.5f, 5.5f, UiDraw.alpha(t.muted(), .7f));
     }
 

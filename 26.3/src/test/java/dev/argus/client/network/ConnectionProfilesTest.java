@@ -43,6 +43,27 @@ class ConnectionProfilesTest {
         Files.writeString(path, Files.readString(path).replace("\"keepProxy\": true,", ""));
         assertFalse(new ConnectionProfiles(path).keepProxy());
     }
+    @Test void lobbyPasswordsFollowCrackedAccountsAcrossReloadAndRemoval() throws Exception {
+        Path path = dir.resolve("connections.json");
+        var store = new ConnectionProfiles(path);
+        var alt = AccountEntry.offline("AltOne"); var main = AccountEntry.offline("MainTwo");
+        store.putAccount(alt); store.putAccount(main);
+        store.setLobbyPassword(alt.id(), "hunter2");
+        assertEquals("hunter2", store.lobbyPasswordFor("altone"));
+        assertNull(store.lobbyPasswordFor("MainTwo"));
+        assertThrows(IllegalArgumentException.class, () -> store.setLobbyPassword(main.id(), "two words"));
+        var loaded = new ConnectionProfiles(path);
+        assertEquals("hunter2", loaded.lobbyPasswordFor("AltOne"));
+        // Re-adding the same cracked name gets a new id but keeps its password.
+        var readded = AccountEntry.offline("AltOne"); loaded.putAccount(readded);
+        assertEquals("hunter2", loaded.lobbyPassword(readded));
+        loaded.setLobbyPassword(readded.id(), "");
+        assertNull(loaded.lobbyPasswordFor("AltOne"));
+        loaded.setLobbyPassword(readded.id(), "again");
+        loaded.removeAccount(readded.id());
+        assertNull(new ConnectionProfiles(path).lobbyPasswordFor("AltOne"));
+        assertFalse(Files.readString(path).contains("again"));
+    }
     @Test void malformedStorageIsNeverSilentlyOverwritten() throws Exception {
         Path path = dir.resolve("connections.json"); java.nio.file.Files.writeString(path, "broken");
         assertThrows(java.io.IOException.class, () -> new ConnectionProfiles(path));

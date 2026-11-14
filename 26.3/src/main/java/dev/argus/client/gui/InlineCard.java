@@ -41,6 +41,9 @@ abstract class InlineCard {
     /** Draws the body; {@code y} is the top of the body, below the card header. */
     abstract void draw(GuiGraphicsExtractor g, int mx, int my, UiTheme t, float x, float y, float w);
 
+    /** Whether the card is on the page right now (e.g. only while the settings it works with are shown). */
+    boolean visible() { return true; }
+
     /** Whether the card is unfolded. */
     boolean open = true;
     private float shown = -1;
@@ -143,23 +146,38 @@ abstract class InlineCard {
     /** A card of labelled rows, each with a button or a choice on its right. */
     static final class Rows extends InlineCard {
         private static final float ROW = 34;
-        private final String title, icon, subtitle;
+        private final String title, icon;
+        private final Supplier<String> subtitle;
         private final List<Row> rows = new ArrayList<>();
+        private java.util.function.BooleanSupplier visible = () -> true;
 
-        private record Row(String label, String detail, String[] choices, IntSupplier chosen, IntConsumer pick, Supplier<String> button, Runnable run) {}
+        private record Row(String label, Supplier<String> detail, String[] choices, IntSupplier chosen, IntConsumer pick, Supplier<String> button, Runnable run) {}
 
-        Rows(UiScreen host, String title, String icon, String subtitle) { super(host); this.title = title; this.icon = icon; this.subtitle = subtitle; }
+        Rows(UiScreen host, String title, String icon, String subtitle) { this(host, title, icon, () -> subtitle); }
+        /** With a subtitle read every frame, e.g. one showing what the module is doing. */
+        Rows(UiScreen host, String title, String icon, Supplier<String> subtitle) { super(host); this.title = title; this.icon = icon; this.subtitle = subtitle; }
+
+        /** Shows the card only while {@code when} holds. */
+        Rows visibleWhen(java.util.function.BooleanSupplier when) { this.visible = when; return this; }
 
         /** A row with a button that opens another screen. */
         Rows open(String label, String detail, String button, Runnable run) { return open(label, detail, () -> button, run); }
         /** As above, with a button label that is read every frame, e.g. one showing progress. */
-        Rows open(String label, String detail, Supplier<String> button, Runnable run) { rows.add(new Row(label, detail, null, null, null, button, run)); return this; }
+        Rows open(String label, String detail, Supplier<String> button, Runnable run) { rows.add(new Row(label, () -> detail, null, null, null, button, run)); return this; }
+        /**
+         * A row whose button acts on the module: its detail is read every frame, and the button reports {@code done},
+         * or the reason the action threw, at the bottom of the page.
+         */
+        Rows action(String label, Supplier<String> detail, String button, String done, Runnable run) {
+            rows.add(new Row(label, detail, null, null, null, () -> button, () -> attempt(run, done))); return this;
+        }
         /** A row with a segmented choice. */
-        Rows choice(String label, String detail, String[] choices, IntSupplier chosen, IntConsumer pick) { rows.add(new Row(label, detail, choices, chosen, pick, null, null)); return this; }
+        Rows choice(String label, String detail, String[] choices, IntSupplier chosen, IntConsumer pick) { rows.add(new Row(label, () -> detail, choices, chosen, pick, null, null)); return this; }
 
+        @Override boolean visible() { return visible.getAsBoolean(); }
         @Override String title() { return title; }
         @Override String icon() { return icon; }
-        @Override String subtitle() { return subtitle; }
+        @Override String subtitle() { return subtitle.get(); }
         @Override float bodyHeight() { return rows.size() * ROW + 4; }
 
         @Override void draw(GuiGraphicsExtractor g, int mx, int my, UiTheme t, float x, float y, float w) {
@@ -169,12 +187,13 @@ abstract class InlineCard {
                 String buttonLabel = row.button() == null ? "" : row.button().get();
                 float control = row.choices() != null ? row.choices().length * 56f : buttonWidth(buttonLabel) + 14;
                 UiDraw.text(g, UiDraw.fit(row.label(), w - control - 24), x + 4, cy - 6, t.text());
-                UiDraw.text(g, UiDraw.fit(row.detail(), w - control - 24, UiDraw.SMALL), x + 4, cy + 7, UiDraw.SMALL, t.muted());
+                String detail = row.detail().get();
+                UiDraw.text(g, UiDraw.fit(detail, w - control - 24, UiDraw.SMALL), x + 4, cy + 7, UiDraw.SMALL, t.muted());
                 if (row.choices() != null) {
                     int chosen = Math.clamp(row.chosen().getAsInt(), 0, row.choices().length - 1);
                     segmented(g, mx, my, t, "row" + i, row.choices(), chosen, x + w - control - 4, cy - 9, 56, 18, row.pick());
                 } else {
-                    button(g, mx, my, t, "row" + i, x + w - control - 4, cy - 9, control, 18, buttonLabel, true, row.detail(), row.run());
+                    button(g, mx, my, t, "row" + i, x + w - control - 4, cy - 9, control, 18, buttonLabel, true, detail, row.run());
                 }
                 if (i < rows.size() - 1) UiDraw.rect(g, x + 4, ry + ROW - .3f, w - 8, .6f, UiDraw.alpha(t.overlay(), .3f));
             }

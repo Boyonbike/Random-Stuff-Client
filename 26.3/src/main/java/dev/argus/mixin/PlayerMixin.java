@@ -157,6 +157,17 @@ public abstract class PlayerMixin extends LivingEntity implements PlayerState {
       return !((Object)this instanceof FakeplayerCommand.SimulatedPlayer) || entity != ClientAccess.argusclientMinecraft.player;
    }
 
+   /** SpeedMine's air miner: mine at ground speed while airborne (adapted from Quiettee Utils via Comet, GPL-3.0). */
+   @ModifyReturnValue(method = "getDestroySpeed", at = @At("RETURN"))
+   private float liftAirMiningPenalty(float speed, net.minecraft.world.level.block.state.BlockState state) {
+      if ((Object)this != ClientAccess.argusclientMinecraft.player) {
+         return speed;
+      }
+
+      dev.argus.client.modules.player.SpeedMineModule speedMine = ClientContext.getModule(dev.argus.client.modules.player.SpeedMineModule.class);
+      return speedMine != null && speedMine.liftsAirMiningPenalty() ? speed * 5.0F : speed;
+   }
+
    @ModifyReturnValue(method = "entityInteractionRange", at = @At("RETURN"))
    private double overrideEntityInteractionRange(double original) {
       return reachModule.entityReach(original);

@@ -5,7 +5,6 @@ import dev.argus.client.ClientContext;
 import dev.argus.client.managers.ModuleRegistry;
 import dev.argus.client.modules.player.SpeedMineModule;
 import dev.argus.client.settings.Setting;
-import dev.argus.client.settings.options.SpeedMineRebreakChoice;
 import dev.argus.client.utils.world.HoleInfo;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.AABB;
@@ -21,8 +20,7 @@ public class PlainHoleFillPolicy implements ClientAccess {
 
    public boolean shouldFill(HoleInfo hole) {
       if (speedMineModule.isToggled()) {
-         Setting<SpeedMineRebreakChoice> rebreakSettingRef = speedMineModule.rebreakSetting;
-         if (rebreakSettingRef.getValue() == SpeedMineRebreakChoice.INSTANT && speedMineModule.getMiningPos() != null) {
+         if (speedMineModule.isInstantRebreak() && speedMineModule.getMiningPos() != null) {
             BlockPos miningPos = speedMineModule.getMiningPos();
             Vec3 miningCenter = Vec3.atCenterOf(miningPos);
             AABB miningBoundsSnapshot = hole.bounds();

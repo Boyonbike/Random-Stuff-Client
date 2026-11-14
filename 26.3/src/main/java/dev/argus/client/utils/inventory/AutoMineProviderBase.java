@@ -42,8 +42,7 @@ public abstract class AutoMineProviderBase implements ClientAccess, AutoMineProv
          return false;
       }
 
-      SpeedMineModule blockCheck = speedMine;
-      if (!blockCheck.isBlockAllowed(position)) {
+      if (!speedMine.isBlockAllowed(position)) {
          return false;
       }
 
