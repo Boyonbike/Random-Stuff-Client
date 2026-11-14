@@ -33,6 +33,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.ArrayDeque;
 import java.util.Map;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.util.function.Predicate;
 import net.minecraft.client.KeyMapping;
@@ -256,18 +257,31 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
       this.accelerationDelay = this.addInt("Volytra Acceleration Delay", "volytraAccelerationDelay", 1, 0, 100, this.modeOnly());
       this.fallMultiplier = this.addDouble("Volytra Fall Multiplier", "volytraFallMultiplier", 0.0, 0.0, 1.0, this.modeOnly());
       this.accelerateUpward = this.addBool("Volytra Accelerate Upward", "volytraAccelerateUpward", false, this.modeOnly());
-      this.autoTakeOff = this.addBool("Volytra Auto Takeoff", "volytraAutoTakeoff", false, this.modeOnly());
+
+      // Safety and limits: the rest of the Volytra Fly tab
+      Setting<Boolean> safety = this.addGroup("Safety & Limits");
+      safety.groupIcon = "shield";
+      safety.groupSection = SECTION_FLY;
       this.stopInWater = this.addBool("Volytra Stop In Water", "volytraStopInWater", false, this.modeOnly());
       this.dontGoIntoUnloadedChunks = this.addBool("Volytra No Unloaded Chunks", "volytraNoUnloadedChunks", false, this.modeOnly());
       this.noCrash = this.addBool("Volytra No Crash", "volytraNoCrash", false, this.modeOnly());
-      this.crashLookAhead = this.addInt("Volytra Crash Lookahead", "volytraCrashLookahead", 3, 1, 15, this.modeOnly());
-      this.instaDrop = this.addBool("Volytra Insta Drop", "volytraInstaDrop", false, this.modeOnly());
+      this.crashLookAhead = this.addInt("Volytra Crash Lookahead", "volytraCrashLookahead", 3, 1, 15, this.visibleWith(this.noCrash));
       this.limitMaxHeight = this.addBool("Volytra Limit Height", "volytraLimitHeight", true, this.modeOnly());
-      this.maxHeight = this.addDouble("Volytra Max Height", "volytraMaxHeight", 500.0, -128.0, 4096.0, this.modeOnly());
+      this.maxHeight = this.addDouble("Volytra Max Height", "volytraMaxHeight", 500.0, -128.0, 4096.0, this.visibleWith(this.limitMaxHeight));
       this.rubberbandSpeedCap = this.addBool("Volytra Rubberband Cap", "volytraRubberbandCap", true, this.modeOnly());
-      this.rubberbandSpeedCapThreshold = this.addDouble("Volytra Rubberband Threshold", "volytraRubberbandThreshold", 200.0, 0.0, 400.0, this.modeOnly());
+      this.rubberbandSpeedCapThreshold = this.addDouble("Volytra Rubberband Threshold", "volytraRubberbandThreshold", 200.0, 0.0, 400.0, this.visibleWith(this.rubberbandSpeedCap));
+
+      // Takeoff and landing
+      this.addGroup("Takeoff & Landing").groupIcon = "drop";
+      this.autoTakeOff = this.addBool("Volytra Auto Takeoff", "volytraAutoTakeoff", false, this.modeOnly());
+      this.instaDrop = this.addBool("Volytra Insta Drop", "volytraInstaDrop", false, this.modeOnly());
+      this.antiSlam = this.addBool("Volytra Anti Slam", "volytraAntiSlam", true, this.modeOnly());
+      this.antiSlamDistance = this.addDouble("Volytra Anti Slam Distance", "volytraAntiSlamDistance", 10.0, 0.1, 30.0, this.visibleWith(this.antiSlam));
+      this.antiSlamMinDistance = this.addDouble("Volytra Anti Slam Min Distance", "volytraAntiSlamMinDistance", 0.5, 0.0, 5.0, this.visibleWith(this.antiSlam));
+      this.antiSlamMinSpeed = this.addDouble("Volytra Anti Slam Min Speed", "volytraAntiSlamMinSpeed", 0.2, 0.0, 1.0, this.visibleWith(this.antiSlam));
 
       // Player avoidance
+      this.folded(this.addGroup("Avoidance")).groupIcon = "search";
       this.playerAvoidance = this.addBool("Volytra Player Avoidance", "volytraPlayerAvoidance", false, this.modeOnly());
       this.avoidanceRadius = this.addDouble("Volytra Avoidance Radius", "volytraAvoidanceRadius", 30.0, 0.0, 50.0, this.visibleWith(this.playerAvoidance));
       this.avoidanceIgnoreFriends = this.addBool("Volytra Ignore Friends", "volytraIgnoreFriends", true, this.visibleWith(this.playerAvoidance));
@@ -279,32 +293,32 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
       this.blockAvoidanceRadius = this.addDouble("Volytra Block Radius", "volytraBlockRadius", 3.0, 0.0, 10.0, value -> this.active() && this.playerAvoidance.getValue() && this.avoidBlocks.getValue());
       this.avoidanceLateral = this.addBool("Volytra Sidestep", "volytraSidestep", true, this.visibleWith(this.playerAvoidance));
 
-      // Landing
-      this.antiSlam = this.addBool("Volytra Anti Slam", "volytraAntiSlam", true, this.modeOnly());
-      this.antiSlamDistance = this.addDouble("Volytra Anti Slam Distance", "volytraAntiSlamDistance", 10.0, 0.1, 30.0, this.visibleWith(this.antiSlam));
-      this.antiSlamMinDistance = this.addDouble("Volytra Anti Slam Min Distance", "volytraAntiSlamMinDistance", 0.5, 0.0, 5.0, this.visibleWith(this.antiSlam));
-      this.antiSlamMinSpeed = this.addDouble("Volytra Anti Slam Min Speed", "volytraAntiSlamMinSpeed", 0.2, 0.0, 1.0, this.visibleWith(this.antiSlam));
-
       // Inventory
+      this.folded(this.addGroup("Inventory")).groupIcon = "player";
       this.replace = this.addBool("Volytra Replace Elytra", "volytraReplaceElytra", false, this.modeOnly());
       this.replaceDurability = this.addInt("Volytra Replace Durability", "volytraReplaceDurability", 2, 1, 500, this.visibleWith(this.replace));
       this.autoReplenish = this.addBool("Volytra Auto Replenish", "volytraAutoReplenish", false, this.modeOnly());
       this.replenishSlot = this.addInt("Volytra Replenish Slot", "volytraReplenishSlot", 9, 1, 9, this.visibleWith(this.autoReplenish));
 
       // Autopilot
+      this.addGroup("Autopilot").groupIcon = "movement";
       this.autoPilot = this.addBool("Volytra Auto Pilot", "volytraAutoPilot", false, this.modeOnly());
+      this.autoPilotMinimumHeight = this.addDouble("Volytra Min Height", "volytraMinHeight", 120.0, -128.0, 4096.0, this.visibleWith(this.autoPilot));
       this.useFireworks = this.addBool("Volytra Use Fireworks", "volytraUseFireworks", false, this.modeOnly());
       this.autoPilotFireworkDelay = this.addDouble("Volytra Firework Delay", "volytraFireworkDelay", 8.0, 1.0, 100.0, this.visibleWith(this.useFireworks));
-      this.autoPilotMinimumHeight = this.addDouble("Volytra Min Height", "volytraMinHeight", 120.0, -128.0, 4096.0, this.modeOnly());
 
-      // Autohighway and Autonav
-      this.navigator = new VolytraNavigator(this);
-
-      // Tweaks
-      this.tweaksGroup = this.module.add(new BooleanSetting("Tweaks", false).markAsGroup());
-      this.tweaksGroup.expanded = true;
+      // Tweaks tab: Argus additions for flying by hand only (see tweak()), one card per part of the flight.
+      this.tweaksGroup = this.tweakGroup("Handling", "movement");
+      this.tweaksGroup.groupSection = SECTION_TWEAKS;
+      this.tweaksGroup.groupNote = "Tweaks pause while Autonav or Autohighway flies";
       this.adaptiveTurning = this.addBool("Argus Adaptive Turning", "argusAdaptiveTurning", true, this.modeOnly());
       this.adaptiveTurnRate = this.addDouble("Argus Turn Rate", "argusTurnRate", 15.0, 0.0, 90.0, this.visibleWithoutArgusMotion(this.adaptiveTurning));
+      this.argusMotion = this.addBool("Argus Motion", "argusMotion", true, this.modeOnly());
+      this.argusMotionAcceleration = this.addDouble("Argus Motion Acceleration", "argusMotionAcceleration", 0.15, 0.01, 2.0, this.visibleWith(this.argusMotion));
+      this.argusMotionBraking = this.addDouble("Argus Motion Braking", "argusMotionBraking", 0.3, 0.01, 2.0, this.visibleWith(this.argusMotion));
+      this.argusMotionTurnRate = this.addDouble("Argus Motion Turn Rate", "argusMotionTurnRate", 15.0, 0.0, 45.0, this.visibleWith(this.argusMotion, this.adaptiveTurning));
+
+      this.tweakGroup("Speeds & Boost", "sliders");
       this.customSpeeds = this.addBool("Argus Base/Boost Speeds", "argusBaseBoostSpeeds", false, this.modeOnly());
       // One toggle owns base and boost: off flies Volytra's own speeds with no boost; on shows all four sliders
       // and the boost key.
@@ -322,14 +336,14 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
       ((NumberSetting<Integer>) this.boostJump).withUnit(" ticks");
       this.speedCap3d = this.addBool("Argus 3D Speed Cap", "argus3dSpeedCap", false, this.modeOnly());
       this.maxSpeed3d = this.addSpeed("Argus Max 3D Speed", "argusMax3dSpeed", 200.0, 0.0, 480.0, this.visibleWith(this.speedCap3d));
+
+      this.tweakGroup("Smart Elytra", "player");
       this.smartElytra = this.addBool("Argus Smart Elytra", "argusSmartElytra", false, this.modeOnly());
       // How close to the floor counts as landed for the chestplate swap; measured, not the onGround flag.
       this.landingSwapHeight = this.addDouble("Argus Landing Swap Height", "argusLandingSwapHeight", 0.5, 0.0, 3.0, this.visibleWith(this.smartElytra));
       ((NumberSetting<Double>) this.landingSwapHeight).withUnit(" blocks");
-      this.argusMotion = this.addBool("Argus Motion", "argusMotion", true, this.modeOnly());
-      this.argusMotionAcceleration = this.addDouble("Argus Motion Acceleration", "argusMotionAcceleration", 0.15, 0.01, 2.0, this.visibleWith(this.argusMotion));
-      this.argusMotionBraking = this.addDouble("Argus Motion Braking", "argusMotionBraking", 0.3, 0.01, 2.0, this.visibleWith(this.argusMotion));
-      this.argusMotionTurnRate = this.addDouble("Argus Motion Turn Rate", "argusMotionTurnRate", 15.0, 0.0, 45.0, this.visibleWith(this.argusMotion, this.adaptiveTurning));
+
+      this.tweakGroup("Liquid Takeoff", "drop");
       // Liquid takeoff (water, swimming, lava): hold jump to rise; at the top of the rise out of the liquid, lift
       // straight up by the Lift speed and start gliding (in water, the Lift is held until clear of it).
       this.liquidTakeoff = this.addBool("Argus Liquid Takeoff", "argusLiquidTakeoff", true, this.modeOnly());
@@ -346,6 +360,9 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
       this.liquidGlideDelay = this.addInt("Argus Liquid Glide Delay", "argusLiquidGlideDelay", 2, 0, 10, this.visibleWith(this.liquidTakeoff));
       ((NumberSetting<Integer>) this.liquidGlideDelay).withUnit(" ticks");
       this.liquidFirework = this.addBool("Argus Liquid Firework", "argusLiquidFirework", false, this.visibleWith(this.liquidTakeoff));
+
+      // Autonav and Autohighway (each its own card) make up the last tab.
+      this.navigator = new VolytraNavigator(this);
 
       module.modeSetting.setChangeCallback(this::onModeChanged);
    }
@@ -381,6 +398,14 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
       return this.modeOnly();
    }
 
+   /**
+    * Whether a Tweaks toggle applies right now. Tweaks are for flying by hand: while Autonav or Autohighway has the
+    * flight, it flies plain Volytra Fly, and the tweaks come back as soon as you have it again.
+    */
+   private boolean tweak(Setting<Boolean> setting) {
+      return setting.getValue() && (this.navigator == null || !this.navigator.driving());
+   }
+
    /** Argus Motion is declared after some settings that depend on it, so read it through a method. */
    private boolean argusMotionOn() {
       return this.argusMotion != null && this.argusMotion.getValue();
@@ -392,6 +417,100 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
 
    private <T> Predicate<T> visibleWithoutArgusMotion(Setting<Boolean> parent) {
       return value -> this.active() && !this.argusMotion.getValue() && parent.getValue();
+   }
+
+   /**
+    * Starts a foldable card in the settings page: every setting added after it, up to the next group, sits in this
+    * card. Shown only in Volytra mode. Group headers are not saved to the config.
+    */
+   Setting<Boolean> addGroup(String name) {
+      Setting<Boolean> group = this.module.add(new BooleanSetting(name, false, this.modeOnly())).markAsGroup();
+      group.expanded = true;
+      return group;
+   }
+
+   /** The settings page's tabs in Volytra mode. */
+   static final String SECTION_FLY = "Volytra Fly", SECTION_TWEAKS = "Tweaks", SECTION_NAV = "AutoNav & Highway";
+
+   private Setting<Boolean> tweakGroup(String name, String icon) {
+      Setting<Boolean> group = this.addGroup(name);
+      group.groupIcon = icon;
+      return group;
+   }
+
+   /** A card that starts folded each time the page opens: settings most players set once and leave. */
+   private Setting<Boolean> folded(Setting<Boolean> group) {
+      group.startsFolded = true;
+      return group;
+   }
+
+   // ---------------------------------------------------------------- the settings page's Autonav trip card
+
+   /** Whether the trip card belongs on the page: Volytra mode (it sits on the AutoNav & Highway tab). */
+   public boolean autonavTripShown() {
+      return this.active();
+   }
+
+   public int autonavTypedX() {
+      return this.navigator.typedX();
+   }
+
+   public int autonavTypedZ() {
+      return this.navigator.typedZ();
+   }
+
+   public void setAutonavTyped(int x, int z) {
+      this.navigator.setTyped(x, z);
+   }
+
+   public boolean autonavTripActive() {
+      return this.navigator.tripActive();
+   }
+
+   public boolean autonavTripPaused() {
+      return this.navigator.tripPaused();
+   }
+
+   public String autonavTripStatus() {
+      return this.navigator.tripStatus();
+   }
+
+   /** Resumes a paused trip, or starts one to the typed coordinates; throws with the reason when it can't. */
+   public void startAutonavTrip() {
+      this.navigator.startTrip();
+   }
+
+   /** Starts a trip to (x, z); throws with the reason when it can't. */
+   public void flyAutonavTo(int x, int z) {
+      this.navigator.flyTo(x, z);
+   }
+
+   public void pauseAutonavTrip() {
+      this.navigator.pauseTrip();
+   }
+
+   public void stopAutonavTrip() {
+      this.navigator.stopTrip();
+   }
+
+   public List<dev.argus.client.utils.movement.volytra.AutonavWaypoint> autonavWaypoints() {
+      return this.navigator.waypoints();
+   }
+
+   public void saveAutonavWaypoint(String name, int x, int z) {
+      this.navigator.saveWaypoint(name, x, z);
+   }
+
+   public void removeAutonavWaypoint(String name) {
+      this.navigator.removeWaypoint(name);
+   }
+
+   public JsonElement autonavWaypointsJson() {
+      return this.navigator.waypointsJson();
+   }
+
+   public void loadAutonavWaypoints(JsonElement json) {
+      this.navigator.loadWaypoints(json);
    }
 
    BooleanSetting addBool(String name, String configName, boolean defaultValue, Predicate<Boolean> visible) {
@@ -521,7 +640,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
          this.handleFallMultiplier();
          this.handleAutopilot(player);
 
-         if (this.argusMotion.getValue()) {
+         if (this.tweak(this.argusMotion)) {
             this.handleArgusHorizontal(player);
          } else {
             this.argusFlying = false;
@@ -566,10 +685,10 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
          }
 
          // Autohighway and Autonav aim the flight themselves; turn smoothing would swing it off their route.
-         if (!this.argusMotion.getValue() && Float.isNaN(this.navigator.steerYaw(player))) this.applyAdaptiveTurning();
-         if (this.argusMotion.getValue()) this.applyTotalCeiling(this.argusFlight.totalCeiling());
+         if (!this.tweak(this.argusMotion) && Float.isNaN(this.navigator.steerYaw(player))) this.applyAdaptiveTurning();
+         if (this.tweak(this.argusMotion)) this.applyTotalCeiling(this.argusFlight.totalCeiling());
          this.applySpeedCap3d();
-         if (this.argusMotion.getValue()) {
+         if (this.tweak(this.argusMotion)) {
             // Momentum continues from what was actually sent, including chunk/crash stops and the caps.
             this.argusFlight.sent(this.velX, this.velZ);
          }
@@ -619,10 +738,10 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
       int right = (PlayerMovementKeys.isDown(minecraft.options.keyRight) ? 1 : 0) - (PlayerMovementKeys.isDown(minecraft.options.keyLeft) ? 1 : 0);
       // Lets the server establish a glide from a fresh elytra swap before speed builds past cruise.
       this.observeBoostDelay(player);
-      double turnRate = this.adaptiveTurning.getValue() ? this.argusMotionTurnRate.getValue() : 0.0;
+      double turnRate = this.tweak(this.adaptiveTurning) ? this.argusMotionTurnRate.getValue() : 0.0;
       ArgusHorizontalFlight.Settings settings;
       boolean curveKey;
-      if (this.customSpeeds.getValue()) {
+      if (this.tweak(this.customSpeeds)) {
          // Base: Argus Motion's smooth cruise at Base H Speed. Boost: hands over to Volytra Fly's own acceleration
          // curve (Start Speed, Acceleration Step and Plateau) up to Boost H Speed. Pressing boost jumps at once
          // to Start Speed, or carries on from the current speed when already faster.
@@ -668,7 +787,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    }
 
    private void applyAdaptiveTurning() {
-      if (!this.adaptiveTurning.getValue()) {
+      if (!this.tweak(this.adaptiveTurning)) {
          this.lastHorizontalDirection = Vec3.ZERO;
          return;
       }
@@ -713,11 +832,11 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    }
 
    private void applyCustomVerticalSpeedCap() {
-      if (!this.customSpeeds.getValue()) return;
+      if (!this.tweak(this.customSpeeds)) return;
 
       double cap = this.effectiveVerticalSpeedCap();
       if (Math.abs(this.velY) > cap) {
-         double brakingCap = this.argusMotion.getValue()
+         double brakingCap = this.tweak(this.argusMotion)
             ? Math.max(cap, Math.abs(this.velY) - this.argusMotionBraking.getValue())
             : cap;
          this.velY = Math.copySign(brakingCap, this.velY);
@@ -725,7 +844,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    }
 
    private void applySpeedCap3d() {
-      if (!this.speedCap3d.getValue()) return;
+      if (!this.tweak(this.speedCap3d)) return;
 
       double cap = this.maxSpeed3d.getValue() / 20.0;
       if (cap <= 0.0) {
@@ -755,12 +874,12 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    }
 
    private void liquidTakeoff(LocalPlayer player) {
-      if (!this.liquidTakeoff.getValue() || ClientContext.baritoneBridge.isPathingOrCalculating()) {
+      if (!this.tweak(this.liquidTakeoff) || ClientContext.baritoneBridge.isPathingOrCalculating()) {
          this.liquidTakeoffAssist.reset();
          return;
       }
       // Without wings on, only help when Smart Elytra can put them on for the glide.
-      if (!isGlider(player.getItemBySlot(EquipmentSlot.CHEST)) && !this.smartElytra.getValue()) {
+      if (!isGlider(player.getItemBySlot(EquipmentSlot.CHEST)) && !this.tweak(this.smartElytra)) {
          this.liquidTakeoffAssist.reset();
          return;
       }
@@ -775,7 +894,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    /** Wings on for a liquid takeoff: already worn, or swapped on by Smart Elytra. */
    private boolean equipGliderForTakeoff(LocalPlayer player) {
       if (isGlider(player.getItemBySlot(EquipmentSlot.CHEST))) return true;
-      if (!this.smartElytra.getValue() || !this.canSmartSwap(player)) return false;
+      if (!this.tweak(this.smartElytra) || !this.canSmartSwap(player)) return false;
       this.swapChest(player, true);
       this.smartTakeoffTick = this.clientTicks;
       return isGlider(player.getItemBySlot(EquipmentSlot.CHEST));
@@ -885,7 +1004,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    public void prepareSmartTakeoff() {
       Minecraft minecraft = this.minecraft();
       LocalPlayer player = minecraft.player;
-      if (!this.active() || !this.module.isToggled() || !this.smartElytra.getValue() || !this.canSmartSwap(player)
+      if (!this.active() || !this.module.isToggled() || !this.tweak(this.smartElytra) || !this.canSmartSwap(player)
          || minecraft.screen != null || !minecraft.isWindowActive()
          || player.onGround() || player.isFallFlying() || player.isInWater() || player.isInLava()
          || player.isPassenger() || player.getAbilities().flying || player.hasEffect(MobEffects.LEVITATION)) return;
@@ -901,7 +1020,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
 
    /** Argus landing swap: back on the ground, wear the best chestplate instead of wings (or nothing). */
    private void smartLandingSwap(LocalPlayer player) {
-      if (!this.smartElytra.getValue() || !this.canSmartSwap(player)) return;
+      if (!this.tweak(this.smartElytra) || !this.canSmartSwap(player)) return;
       ItemStack chest = player.getItemBySlot(EquipmentSlot.CHEST);
       if (!chest.isEmpty() && !isGlider(chest)) return;
       // Measure the real gap under the hitbox rather than trusting the onGround flag, which hovering and other
@@ -1080,7 +1199,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
 
       // Smart Elytra owns the jump-to-flight path; don't let the older auto-takeoff
       // setting fire a second takeoff from the same jump.
-      if (this.autoTakeOff.getValue() && !this.smartElytra.getValue() && this.jumpPressed) {
+      if (this.autoTakeOff.getValue() && !this.tweak(this.smartElytra) && this.jumpPressed) {
          if (!this.lastJumpPressed && !player.isFallFlying()) {
             this.jumpTimer = 0;
             this.incrementJumpTimer = true;
@@ -1181,7 +1300,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
 
    private void handleVerticalSpeed() {
       // Volytra's own model flies at half the vertical value; the Tweaks base/boost sliders are real speeds.
-      double scale = this.customSpeeds.getValue() ? 1.0 : 0.5;
+      double scale = this.tweak(this.customSpeeds) ? 1.0 : 0.5;
       if (PlayerMovementKeys.isDown(this.minecraft().options.keyJump)) {
          this.velY += scale * this.verticalAcceleration;
       } else if (PlayerMovementKeys.isDown(this.minecraft().options.keyShift)) {
@@ -1355,11 +1474,11 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    }
 
    private boolean boostActive() {
-      return this.customSpeeds.getValue() && this.boostKeyHeld();
+      return this.tweak(this.customSpeeds) && this.boostKeyHeld();
    }
 
    private double effectiveHorizontalSpeedCap() {
-      double cap = this.customSpeeds.getValue()
+      double cap = this.tweak(this.customSpeeds)
          ? (this.boostActive() ? this.boostHorizontalCap() : this.baseHorizontalSpeed.getValue() / 20.0)
          : this.horizontalSpeed.getValue();
       if (this.rubberbandCapTicksLeft > 0) cap = Math.min(cap, this.rubberbandCapSpeed);
@@ -1367,7 +1486,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    }
 
    private double effectiveVerticalSpeedCap() {
-      double cap = this.customSpeeds.getValue()
+      double cap = this.tweak(this.customSpeeds)
          ? (this.boostActive() ? this.boostVerticalSpeed.getValue() : this.baseVerticalSpeed.getValue()) / 20.0
          : this.verticalSpeed.getValue();
       return Math.max(0.0, cap);
@@ -1380,7 +1499,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    }
 
    private double effectiveHorizontalStartSpeed() {
-      return this.customSpeeds.getValue()
+      return this.tweak(this.customSpeeds)
          ? Math.min(this.curveStartSpeed(), this.effectiveHorizontalSpeedCap())
          : this.curveStartSpeed();
    }
@@ -1388,7 +1507,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
    private double effectiveVerticalStartSpeed() {
       double start = this.verticalStartSpeed.getValue();
       if (this.navigator.unsticking()) start = Math.min(VolytraNavigator.UNSTICK_MIN_SPEED, start);
-      return this.customSpeeds.getValue() ? Math.min(start, this.effectiveVerticalSpeedCap()) : start;
+      return this.tweak(this.customSpeeds) ? Math.min(start, this.effectiveVerticalSpeedCap()) : start;
    }
 
    // ---------------------------------------------------------------- hooks for VolytraNavigator
@@ -1445,7 +1564,7 @@ public class VolytraElytraFlyHandler extends ElytraFlyModeHandler {
       }
 
       double cap = this.effectiveVerticalSpeedCap();
-      if (this.argusMotion.getValue()) {
+      if (this.tweak(this.argusMotion)) {
          if (this.verticalAcceleration > cap) {
             this.verticalAcceleration = Math.max(cap, this.verticalAcceleration - this.argusMotionBraking.getValue());
             this.atMaxVerticalSpeed = this.verticalAcceleration >= cap;

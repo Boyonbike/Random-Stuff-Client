@@ -1,6 +1,7 @@
 package dev.argus.client.gui;
 
 import dev.argus.client.modules.Module;
+import dev.argus.client.modules.render.targets.DefaultTargets;
 import dev.argus.client.modules.render.targets.RuleSettings;
 import dev.argus.client.modules.render.targets.SpecificRules;
 import dev.argus.client.modules.render.targets.SpecificTargets;
@@ -19,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
 /**
  * ESP's and Tracers' targets, all in one card:
  * <pre>
+ *  Presets  ( Storage ESP )            ← adds several ready-made groups at once
  *  [ search field ..................... ] [ All ▸ ] [ Add (2) ]
  *  ┌ matches: tick as many as you like; Enter or Add adds them as one group ─┐
  *  └───────────────────────────────────────────────────────────────────────┘
@@ -28,7 +30,7 @@ import net.minecraft.world.item.ItemStack;
  * Left-clicking a row turns the group on or off; right-clicking opens its settings. Each thing can be added once.
  */
 final class TargetsCard extends InlineCard {
-    private static final float TOP = 26, MATCH = 22, ROW = 30, TYPE_W = 54, CIRCLE = 16;
+    private static final float PRESETS = 24, TOP = 26, MATCH = 22, ROW = 30, TYPE_W = 54, CIRCLE = 16;
     private static final SpecificRules.Category[] FILTERS = {null, SpecificRules.Category.BLOCKS, SpecificRules.Category.PLAYERS,
             SpecificRules.Category.MOBS, SpecificRules.Category.ENTITIES, SpecificRules.Category.EXTRAS};
     private static final String[] FILTER_NAMES = {"All", "Blocks", "Players", "Mobs", "Entities", "Extras"};
@@ -136,7 +138,7 @@ final class TargetsCard extends InlineCard {
     @Override float bodyHeight() {
         List<SpecificRules.Rule> all = targets.rules().all();
         open.keySet().removeIf(id -> targets.rules().find(id) == null);
-        float height = TOP + panelHeight() + 4;
+        float height = PRESETS + TOP + panelHeight() + 4;
         if (all.isEmpty()) return height + ROW;
         for (SpecificRules.Rule rule : all) height += ROW + shownDropdownHeight(rule);
         return height + 4;
@@ -165,7 +167,7 @@ final class TargetsCard extends InlineCard {
     @Override boolean otherClicked(MouseButtonEvent event) {
         if (event.button() != 1) return false;
         // Right-click: the filter steps back; a row opens or closes its settings.
-        if (UiDraw.over(event.x(), event.y(), filterX, cardY + 4, filterW, 18)) { filter = Math.floorMod(filter - 1, FILTERS.length); return true; }
+        if (UiDraw.over(event.x(), event.y(), filterX, cardY + PRESETS + 4, filterW, 18)) { filter = Math.floorMod(filter - 1, FILTERS.length); return true; }
         for (Row row : rows) {
             if (UiDraw.over(event.x(), event.y(), cardX, row.y(), rowRight, ROW)) { toggleOpen(row.rule()); return true; }
         }
@@ -220,6 +222,19 @@ final class TargetsCard extends InlineCard {
         say("Added " + (count == 1 ? targets.label(rule, 1) : count + " things") + " as a " + rule.category().title() + " group. Its settings are open below.");
     }
 
+    /** Adds every group of a preset, each with its own settings, leaving out things already in the list. */
+    private void addPreset(DefaultTargets.Preset preset) {
+        DefaultTargets.Applied applied = DefaultTargets.apply(targets.rules(), preset);
+        if (applied.groups() == 0) { fail("Everything in " + preset.name() + " is already in the list."); return; }
+        targets.changed();
+        links.syncRules();
+        selected.clear();
+        field.setValue("");
+        lastQuery = null;
+        say("Added " + preset.name() + ": " + applied.groups() + (applied.groups() == 1 ? " group" : " groups") + ", " + applied.things() + " blocks"
+                + (applied.skipped() > 0 ? " (" + applied.skipped() + " already in the list were left out)" : "") + ". Right-click a group for its settings.");
+    }
+
     private void toggle(SpecificRules.Rule rule) {
         SpecificRules.Rule current = targets.rules().find(rule.id);
         if (current == null) return;
@@ -235,6 +250,21 @@ final class TargetsCard extends InlineCard {
     @Override void draw(GuiGraphicsExtractor g, int mx, int my, UiTheme t, float x, float y, float w) {
         cardX = x; cardW = w; cardY = y;
         rows.clear();
+        // Presets row: one button per preset, each adding all its groups at once.
+        float px = x + 4, pcy = y + PRESETS / 2 - 2;
+        UiDraw.text(g, "Presets", px, pcy, UiDraw.SMALL, t.muted());
+        px += UiDraw.width("Presets", UiDraw.SMALL) + 8;
+        for (DefaultTargets.Preset preset : DefaultTargets.presets()) {
+            boolean done = DefaultTargets.missing(targets.rules(), preset) == 0;
+            String label = done ? preset.name() + " · added" : preset.name();
+            float bw = buttonWidth(label);
+            button(g, mx, my, t, "preset." + preset.name(), px, pcy - 8, bw, 16, label, false,
+                    done ? "Everything in this preset is already in the list."
+                         : preset.description() + ". Adds " + preset.size() + " groups at once; things already in the list are left out.",
+                    () -> addPreset(preset));
+            px += bw + 6;
+        }
+        y += PRESETS;
         // Search row: field, filter, add.
         float cy = y + 12;
         String addLabel = selected.isEmpty() ? "Add" : "Add (" + selected.size() + ")";

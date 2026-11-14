@@ -15,6 +15,8 @@ import dev.argus.client.events.MinecraftTickEvent;
 import dev.argus.client.events.PacketEvent;
 import dev.argus.client.integrations.baritone.BaritoneBridge;
 import dev.argus.client.modules.Module;
+import dev.argus.client.network.ConnectionProfiles;
+import dev.argus.client.network.ProfileRuntime;
 import dev.argus.client.modules.ModuleCategory;
 import dev.argus.client.settings.BooleanSetting;
 import dev.argus.client.settings.NumberSetting;
@@ -92,6 +94,44 @@ public final class AutoLobbyModule extends Module {
 
     public AutoLobbyModule() {
         super("AutoLobby", "Logs in and enters a Nether portal from supported server lobbies.", ModuleCategory.MISC);
+    }
+
+    /** Name of the built-in preset that mirrors Comet AutoLobby's defaults for 6b6t. */
+    public static final String PRESET_6B6T = "6b6t";
+    private static final String SERVER_6B6T = "6b6t.org";
+    /** Comet's AutoLobby reconnects after 3.5 s by default; Argus does that through AutoReconnect. */
+    private static final float RECONNECT_6B6T_SECONDS = 3.5F;
+
+    /**
+     * Sets AutoLobby up the way Comet's AutoLobby is by default, aimed at 6b6t: same timings, scan sizes and portal
+     * handling, plus AutoReconnect on at 3.5 s. Login Account and Login Password are personal and left alone.
+     */
+    public void apply6b6tPreset() {
+        loginServer.setValue(SERVER_6B6T);
+        loginTimeout.setValue(200);
+        postLoginDelay.setValue(60);
+        enterPortal.setValue(true);
+        useBaritone.setValue(true);
+        searchRadius.setValue(64);
+        searchHeight.setValue(32);
+        joinDelay.setValue(40);
+        rescanDelay.setValue(100);
+        if (ClientContext.moduleRegistry.getModule(AutoReconnectModule.class) instanceof AutoReconnectModule reconnect) {
+            reconnect.minutesSetting.setValue(0);
+            reconnect.secondsSetting.setValue(RECONNECT_6B6T_SECONDS);
+            reconnect.enable();
+        }
+        ClientContext.configurationManager.saveAsync();
+    }
+
+    public boolean matches6b6tPreset() {
+        boolean reconnectMatches = !(ClientContext.moduleRegistry.getModule(AutoReconnectModule.class) instanceof AutoReconnectModule reconnect)
+            || reconnect.isToggled() && reconnect.minutesSetting.getValue() == 0
+                && reconnect.secondsSetting.getValue() == RECONNECT_6B6T_SECONDS;
+        return SERVER_6B6T.equalsIgnoreCase(loginServer.getValue().strip()) && loginTimeout.getValue() == 200
+            && postLoginDelay.getValue() == 60 && enterPortal.getValue() && useBaritone.getValue()
+            && searchRadius.getValue() == 64 && searchHeight.getValue() == 32 && joinDelay.getValue() == 40
+            && rescanDelay.getValue() == 100 && reconnectMatches;
     }
 
     @Override
@@ -181,14 +221,14 @@ public final class AutoLobbyModule extends Module {
         String server = loginServer.getValue();
         String command = null;
         if (!server.isBlank()
-            && SetHomeStore.normaliseServer(server).equals(SetHomeStore.normaliseServer(mc.getCurrentServer().ip))
-            && loginAccount.getValue().strip().equalsIgnoreCase(mc.getUser().getName())) {
-            String password = loginPassword.getValue();
-            if (password.chars().noneMatch(Character::isISOControl)) command = LobbyLogin.command(password);
+            && SetHomeStore.normaliseServer(server).equals(SetHomeStore.normaliseServer(mc.getCurrentServer().ip))) {
+            String password = passwordFor(mc.getUser().getName());
+            if (password != null && password.chars().noneMatch(Character::isISOControl)) command = LobbyLogin.command(password);
         }
         if (command == null) {
             if (!warnedMissingLogin) {
-                notice("Log in manually or configure Login Server, Login Account and Login Password.");
+                notice("Log in manually, or set Login Server and give " + mc.getUser().getName()
+                    + " a lobby password in Accounts (or use Login Account and Login Password).");
                 warnedMissingLogin = true;
             }
             return false;
@@ -198,6 +238,26 @@ public final class AutoLobbyModule extends Module {
         loginTicks = 0;
         connection.sendCommand(command);
         return false;
+    }
+
+    /**
+     * The /login password for the account being played: the lobby password saved with that cracked account in the
+     * account switcher first, so switching accounts switches passwords, then the single Login Account / Password pair.
+     */
+    private String passwordFor(String username) {
+        ConnectionProfiles profiles = ProfileRuntime.profiles();
+        String saved = profiles == null ? null : profiles.lobbyPasswordFor(username);
+        if (saved != null) return saved;
+        return loginAccount.getValue().strip().equalsIgnoreCase(username) ? loginPassword.getValue() : null;
+    }
+
+    /** How many saved cracked accounts have a lobby password. */
+    public static int accountsWithLobbyPassword() {
+        ConnectionProfiles profiles = ProfileRuntime.profiles();
+        if (profiles == null) return 0;
+        int count = 0;
+        for (var account : profiles.accounts()) if (profiles.lobbyPassword(account) != null) count++;
+        return count;
     }
 
     @EventHandler

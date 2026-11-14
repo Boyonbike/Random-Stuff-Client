@@ -9,7 +9,6 @@ import dev.argus.client.modules.player.SpeedMineModule;
 import dev.argus.client.settings.BooleanSetting;
 import dev.argus.client.settings.NumberSetting;
 import dev.argus.client.settings.Setting;
-import dev.argus.client.settings.options.SpeedMineRebreakChoice;
 import dev.argus.client.utils.entity.PlayerStateUtils;
 import dev.argus.client.utils.inventory.InventoryUtils;
 import dev.argus.client.utils.world.BlockInteractionUtils;
@@ -194,8 +193,7 @@ public class AutoDropModule extends PlacementModule {
       Float damageSettingValue = damageSettingRef.getValue();
       float damageFraction = miningDamage / damageSettingValue;
       if (speedMineModule.isToggled() && damageFraction >= 1.0F) {
-         Setting<SpeedMineRebreakChoice> rebreakSettingRef = speedMineModule.rebreakSetting;
-         if (rebreakSettingRef.getValue() == SpeedMineRebreakChoice.INSTANT && position.equals(speedMineModule.getMiningPos())) {
+         if (speedMineModule.isInstantRebreak() && position.equals(speedMineModule.getMiningPos())) {
             return true;
          }
       }

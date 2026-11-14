@@ -12,6 +12,17 @@ public abstract class Setting<T> extends NamedFeature implements ValueProvider<T
    public boolean visibilityDependency;
    public boolean opaqueColor;
    public boolean groupOnly;
+   /** For a group: the icon on its card in the settings page (null for the default). */
+   public String groupIcon;
+   /** For a group: a short note shown under its card's title, or null. */
+   public String groupNote;
+   /** For a group: its card starts folded each time the page opens. */
+   public boolean startsFolded;
+   /**
+    * For a group: the tab its card (and every group after it, until the next group naming a tab) sits under in the
+    * settings page. A page shows tabs once two or more of its visible groups name different ones.
+    */
+   public String groupSection;
    private Predicate<? super T> visibilityPredicate;
    private String configName = this.getName();
    private String boundaryLabel = "";

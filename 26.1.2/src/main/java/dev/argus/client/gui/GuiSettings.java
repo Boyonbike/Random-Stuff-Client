@@ -10,7 +10,7 @@ final class GuiSettings {
         return settings.stream().filter(setting->setting.isVisible()||Objects.equals(focus,setting.getName())).toList();
     }
     static void expandGroups(List<Setting<?>> settings){
-        for(Setting<?> setting:settings)if(setting.isGroupOnly()||setting.visibilityDependency)setting.expanded=true;
+        for(Setting<?> setting:settings)if(setting.isGroupOnly()||setting.visibilityDependency)setting.expanded=!(setting.isGroupOnly()&&setting.startsFolded);
     }
     static String editText(Setting<?> setting){return setting instanceof SetSetting<?>?"":String.valueOf(setting.getValue());}
     static void toggleCollectionEntry(SetSetting<?> setting,String text){

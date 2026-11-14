@@ -113,7 +113,7 @@ public class NukerModule extends Module {
 
    private int getMiningBatchLimit() {
       if (speedMineModule.isToggled()) {
-         Boolean extraBreakEnabled = speedMineModule.extraBreakSetting.getValue();
+         Boolean extraBreakEnabled = speedMineModule.doubleBreakSetting.getValue();
          int batchLimit;
          if (extraBreakEnabled) {
             batchLimit = 2;

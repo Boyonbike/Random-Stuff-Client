@@ -1,13 +1,27 @@
 package dev.argus.client.modules.render.targets;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 
-/** The target lists ESP and Tracers start with on a new config (or after a reset). */
+/** The target lists ESP and Tracers start with on a new config (or after a reset), and presets added from search. */
 public final class DefaultTargets {
+   /** A set of groups added in one go from the button above the Targets search, e.g. Meteor's Storage ESP. */
+   public record Preset(String name, String description, String json) {
+      /** How many groups it adds. */
+      public int size() {
+         return JsonParser.parseString(this.json).getAsJsonArray().size();
+      }
+   }
+
+   /** What adding a preset did: groups added, and things left out because they were already in a group. */
+   public record Applied(int groups, int things, int skipped) {
+   }
+
    private static final String[] DYES = {
       "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
       "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"
@@ -21,6 +35,55 @@ public final class DefaultTargets {
     * chests red, ender chests purple, and furnaces, hoppers, dispensers and the rest grey.
     */
    public static String esp() {
+      return storage("default-");
+   }
+
+   /** Meteor's Storage ESP as a preset: the same groups and colours ESP starts with. */
+   public static final Preset STORAGE = new Preset("Storage ESP", "Meteor's storage groups, each with its own colour", storage("preset-"));
+
+   /** The presets offered by the Targets search. */
+   public static List<Preset> presets() {
+      return List.of(STORAGE);
+   }
+
+   /**
+    * Adds a preset's groups (with their settings) to a list. Things already in a group are left out of the new ones,
+    * and a group with nothing left isn't added.
+    */
+   public static Applied apply(SpecificRules rules, Preset preset) {
+      int groups = 0;
+      int things = 0;
+      int skipped = 0;
+      for (JsonElement element : JsonParser.parseString(preset.json()).getAsJsonArray()) {
+         SpecificRules.Rule template = SpecificRules.Rule.fromJson(element.getAsJsonObject());
+         SpecificRules.Rule added = rules.add(template.members());
+         int count = added == null ? 0 : added.members().size();
+         skipped += template.members().size() - count;
+         if (added != null) {
+            added.body = new SpecificRules.TextBody(template.body.read());
+            groups++;
+            things += count;
+         }
+      }
+
+      return new Applied(groups, things, skipped);
+   }
+
+   /** How many of a preset's things aren't in a group yet (0: adding it would do nothing). */
+   public static int missing(SpecificRules rules, Preset preset) {
+      int missing = 0;
+      for (JsonElement element : JsonParser.parseString(preset.json()).getAsJsonArray()) {
+         for (SpecificRules.Member member : SpecificRules.Rule.fromJson(element.getAsJsonObject()).members()) {
+            if (rules.owner(member.type(), member.id()) == null) {
+               missing++;
+            }
+         }
+      }
+
+      return missing;
+   }
+
+   private static String storage(String prefix) {
       List<String> chests = new ArrayList<>(List.of("chest"));
       for (String age : new String[]{"", "exposed_", "weathered_", "oxidized_"}) {
          chests.add(age + "copper_chest");
@@ -33,12 +96,12 @@ public final class DefaultTargets {
       }
 
       JsonArray rules = new JsonArray();
-      rules.add(blocks("default-chests", chests, new Color(255, 160, 0)));
-      rules.add(blocks("default-trapped-chests", List.of("trapped_chest"), new Color(255, 0, 0)));
-      rules.add(blocks("default-barrels", List.of("barrel"), new Color(255, 160, 0)));
-      rules.add(blocks("default-shulker-boxes", shulkers, new Color(255, 160, 0)));
-      rules.add(blocks("default-ender-chests", List.of("ender_chest"), new Color(120, 0, 255)));
-      rules.add(blocks("default-other-storage", List.of(
+      rules.add(blocks(prefix + "chests", chests, new Color(255, 160, 0)));
+      rules.add(blocks(prefix + "trapped-chests", List.of("trapped_chest"), new Color(255, 0, 0)));
+      rules.add(blocks(prefix + "barrels", List.of("barrel"), new Color(255, 160, 0)));
+      rules.add(blocks(prefix + "shulker-boxes", shulkers, new Color(255, 160, 0)));
+      rules.add(blocks(prefix + "ender-chests", List.of("ender_chest"), new Color(120, 0, 255)));
+      rules.add(blocks(prefix + "other-storage", List.of(
          "furnace", "blast_furnace", "smoker", "brewing_stand", "chiseled_bookshelf", "crafter",
          "dispenser", "dropper", "decorated_pot", "hopper"
       ), new Color(140, 140, 140)));
