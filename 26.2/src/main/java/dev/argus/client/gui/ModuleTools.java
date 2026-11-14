@@ -3,8 +3,11 @@ package dev.argus.client.gui;
 import dev.argus.client.modules.Module;
 import dev.argus.client.modules.client.DiscordSyncModule;
 import dev.argus.client.modules.client.HUDModule;
+import dev.argus.client.modules.misc.AutoLobbyModule;
 import dev.argus.client.modules.misc.ChatToolsModule;
 import dev.argus.client.modules.movement.BoatPhaseModule;
+import dev.argus.client.modules.movement.ElytraFlyModule;
+import dev.argus.client.utils.movement.VolytraElytraFlyHandler;
 import dev.argus.client.modules.player.AutoRekitModule;
 import dev.argus.client.modules.render.ESPModule;
 import dev.argus.client.modules.render.TooltipsModule;
@@ -58,11 +61,13 @@ final class ModuleTools {
 
     static void attach(ModulePage page, UiScreen host, Module module, Hooks hooks) {
         if (module instanceof AutoRekitModule rekit) page.inline(rekitPresets(host, rekit), Placement.last());
+        if (module instanceof AutoLobbyModule lobby) page.inline(autoLobbyPresets(host, lobby), Placement.first());
         if (module instanceof TooltipsModule tooltips) page.inline(shulkerCombos(host, tooltips), Placement.after("ShulkerIcons"));
         if (module instanceof ChatToolsModule) page.inline(social(host, hooks), Placement.first());
         if (module instanceof DiscordSyncModule sync) page.inline(discordSync(host, sync), Placement.last());
         if (module instanceof WaypointsModule) page.inline(waypoints(host), Placement.first());
         if (module instanceof BoatPhaseModule boat) page.inline(boatControls(host, boat), Placement.first());
+        if (module instanceof ElytraFlyModule fly && fly.volytra() != null) page.inline(autonavTrip(host, fly.volytra()), Placement.after("Autonav"));
         if (module instanceof HUDModule && hooks.topBar()) page.inline(hud(host, hooks), Placement.first());
         if ((module instanceof ESPModule || module instanceof TracersModule) && TargetLinks.get() != null)
             page.inline(new TargetsCard(host, module, TargetLinks.get(), module instanceof ESPModule), Placement.first());
@@ -157,6 +162,13 @@ final class ModuleTools {
                 .open("Retry fast air", "Clear speed fallbacks and try the configured speed again", "Retry", module::retryFastAir);
     }
 
+    // ---- Elytra Fly (Volytra Autonav) ---------------------------------------------------------
+
+    /** Type or pick where to go, Start/Pause/Stop the trip, and keep a list of saved destinations. */
+    private static InlineCard autonavTrip(UiScreen host, VolytraElytraFlyHandler volytra) {
+        return new AutonavCard(host, volytra);
+    }
+
     // ---- Auto Rekit --------------------------------------------------------------------------
 
     private static InlineCard rekitPresets(UiScreen host, AutoRekitModule module) {
@@ -173,6 +185,25 @@ final class ModuleTools {
                 })
                 .field("Name a new preset…", 32, "Save inventory", "Saves what you are carrying and wearing under this name",
                         name -> "Saved and activated " + name + ".", module::capturePreset);
+    }
+
+    // ---- AutoLobby ---------------------------------------------------------------------------
+
+    private static InlineCard autoLobbyPresets(UiScreen host, AutoLobbyModule module) {
+        String name = AutoLobbyModule.PRESET_6B6T;
+        return new InlineCard.Items(host, "AutoLobby presets", "star",
+                () -> (module.matches6b6tPreset() ? "In use: " + name : "Click a preset to apply it") + " · " + lobbyPasswords(),
+                "No presets.",
+                () -> List.of(new InlineCard.Items.Entry(name, "Comet's defaults · 6b6t.org · AutoReconnect 3.5s", module.matches6b6tPreset(), null,
+                        module::apply6b6tPreset, "Applied the " + name + " preset. Account passwords are unchanged.", List.of())))
+                .hint("Each cracked account's /login password is set in Accounts")
+                .header(InlineCard.Items.Action.of("Accounts", "Set a lobby password for each cracked account; AutoLobby uses the one you are playing as",
+                        null, () -> Minecraft.getInstance().gui.setScreen(new AccountsScreen(host))));
+    }
+
+    private static String lobbyPasswords() {
+        int n = AutoLobbyModule.accountsWithLobbyPassword();
+        return n == 0 ? "no account passwords" : n + (n == 1 ? " account password" : " account passwords");
     }
 
     // ---- Tooltips: shulker icon combos -------------------------------------------------------

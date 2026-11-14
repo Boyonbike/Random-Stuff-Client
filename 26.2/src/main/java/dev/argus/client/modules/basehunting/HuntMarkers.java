@@ -50,6 +50,8 @@ import net.minecraft.world.phys.Vec3;
 public final class HuntMarkers implements ClientAccess {
    private static final DateTimeFormatter LOG_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
    private final Module module;
+   /** The folder remembered finds go in: the module's name, plus the category for multi-category detectors. */
+   private final String memoryName;
    private final Setting<Boolean> notifySetting;
    private final Setting<Boolean> censorSetting;
    private final Setting<Boolean> distanceSetting;
@@ -81,6 +83,7 @@ public final class HuntMarkers implements ClientAccess {
    /** As above; {@code notify} sets whether chat alerts start on, which suits detectors that find a few things. */
    public HuntMarkers(Module module, Color fill, Color outline, boolean tracers, boolean notify) {
       this.module = module;
+      this.memoryName = module.getName();
       this.notifySetting = module.add(new BooleanSetting("Notify", notify).markVisibilityDependency());
       this.censorSetting = module.add(new BooleanSetting("CensorCoords", false).dependsOn(this.notifySetting));
       this.distanceSetting = module.add(new BooleanSetting("ShowDistance", true).dependsOn(this.notifySetting));
@@ -113,6 +116,92 @@ public final class HuntMarkers implements ClientAccess {
       }
    }
 
+   /**
+    * One category of a detector that sorts its finds into several (see {@link HuntersESPModule}). The category gets
+    * its own Colour, Shape, Tracers, Notify, Sound and Waypoints in its own card, shown while {@code enabled} is on and
+    * saved as {@code <prefix><name>}; everything else comes from {@code shared}. Remembered finds are kept per category.
+    */
+   public HuntMarkers(Module module, Shared shared, String prefix, Setting<?> group, Setting<Boolean> enabled, Color colour, boolean tracers, boolean notify) {
+      this.module = module;
+      this.memoryName = module.getName() + "-" + prefix;
+      this.outlineSetting = shared.own(prefix, group, enabled, new ColorSetting("Colour", colour));
+      this.fillSetting = null;
+      this.shapeSetting = shared.own(prefix, group, enabled, new EnumSetting<>("Shape", Shape.BOTH));
+      this.tracersSetting = shared.own(prefix, group, enabled, new BooleanSetting("Tracers", tracers));
+      this.notifySetting = shared.own(prefix, group, enabled, new BooleanSetting("Notify", notify));
+      this.soundSetting = shared.own(prefix, group, enabled, new BooleanSetting("Sound", false));
+      this.waypointsSetting = shared.own(prefix, group, enabled, new BooleanSetting("Waypoints", false));
+      this.xaeroSetting = new BooleanSetting("Xaero", false);
+      if (ClientContext.waypointAdapter != null && ClientContext.waypointAdapter.isAvailable()) {
+         shared.own(prefix, group, enabled, this.xaeroSetting);
+      }
+
+      this.censorSetting = shared.censorSetting;
+      this.distanceSetting = shared.distanceSetting;
+      this.soundTypeSetting = shared.soundTypeSetting;
+      this.volumeSetting = shared.volumeSetting;
+      this.logSetting = shared.logSetting;
+      this.rememberSetting = shared.rememberSetting;
+      this.forgetSetting = shared.forgetSetting;
+      this.rangeSetting = shared.rangeSetting;
+      this.nearestOnlySetting = shared.nearestOnlySetting;
+      this.lineWidthSetting = shared.lineWidthSetting;
+      shared.members.add(this);
+   }
+
+   /**
+    * The settings every category of one detector shares: coordinates in alerts, the sound itself, logging, memory,
+    * range and line width. Build it first so categories can use it, then {@link #register()} it where its card goes.
+    */
+   public static final class Shared {
+      private final Module module;
+      private final List<HuntMarkers> members = new ArrayList<>();
+      private final Setting<Boolean> censorSetting = new BooleanSetting("CensorCoords", false);
+      private final Setting<Boolean> distanceSetting = new BooleanSetting("ShowDistance", true);
+      private final Setting<NamedIdentifier> soundTypeSetting = new IdentifierSetting("SoundType", BuiltinSound.WARNING.getIdentifier());
+      private final Setting<Float> volumeSetting = new NumberSetting<>("Volume", 1.0F, 0.0F, 1.0F);
+      private final Setting<Boolean> logSetting = new BooleanSetting("Log", false);
+      private final Setting<Boolean> rememberSetting = new BooleanSetting("Remember", false);
+      private final Setting<Boolean> forgetSetting = new BooleanSetting("ForgetFinds", false);
+      private final Setting<Integer> rangeSetting = new NumberSetting<>("Range", 512, 32, 4096).withUnit("m");
+      private final Setting<Boolean> nearestOnlySetting = new BooleanSetting("NearestOnly", false);
+      private final Setting<Float> lineWidthSetting = new NumberSetting<>("LineWidth", 1.5F, 0.1F, 5.0F);
+
+      public Shared(Module module) {
+         this.module = module;
+         // Saved under the names the single-category settings used, so old configs keep these values.
+         this.soundTypeSetting.setConfigName("Type");
+         this.forgetSetting.setChangeCallback(() -> {
+            if (this.forgetSetting.getValue()) {
+               this.forgetSetting.setValue(false);
+               for (HuntMarkers member : this.members) {
+                  member.forget(false);
+               }
+
+               ChatUtils.printChat(Component.literal(module.getName() + ": forgot every find here."), ChatUtils.moduleSignature(module));
+            }
+         });
+      }
+
+      /** Adds the shared card, titled {@code title}, at this point in the module's settings. */
+      public void register(String title) {
+         Setting<Boolean> group = this.module.add(new BooleanSetting(title, true).markAsGroup());
+         for (Setting<?> setting : List.of(
+            this.rangeSetting, this.lineWidthSetting, this.nearestOnlySetting, this.censorSetting, this.distanceSetting,
+            this.soundTypeSetting, this.volumeSetting, this.logSetting, this.rememberSetting, this.forgetSetting
+         )) {
+            setting.dependsOn(group);
+            this.module.add(setting);
+         }
+      }
+
+      private <S extends Setting<?>> S own(String prefix, Setting<?> group, Setting<Boolean> enabled, S setting) {
+         setting.dependsOn(group, enabled);
+         setting.setConfigName(prefix + setting.getName());
+         return this.module.add(setting);
+      }
+   }
+
    /** See-through fill to go with an outline colour. */
    static Color fillFor(Color outline) {
       return new Color(outline.getRed(), outline.getGreen(), outline.getBlue(), Math.min(60, outline.getAlpha() / 4 + 10));
@@ -122,6 +211,12 @@ public final class HuntMarkers implements ClientAccess {
    public HuntMarkers withoutColours() {
       this.module.unregister(this.fillSetting);
       this.module.unregister(this.outlineSetting);
+      return this;
+   }
+
+   /** Saves this category's colour under {@code configName}, so a colour from before categories had cards carries over. */
+   public HuntMarkers savingColourAs(String configName) {
+      this.outlineSetting.setConfigName(configName);
       return this;
    }
 
@@ -182,6 +277,10 @@ public final class HuntMarkers implements ClientAccess {
 
    /** Throws away every find here, including the remembered ones for this server and dimension. */
    public void forget() {
+      this.forget(true);
+   }
+
+   private void forget(boolean announce) {
       String key = this.worldKey != null ? this.worldKey : currentWorldKey();
       this.marks.clear();
       this.alerted.clear();
@@ -196,7 +295,9 @@ public final class HuntMarkers implements ClientAccess {
          });
       }
 
-      ChatUtils.printChat(Component.literal(this.module.getName() + ": forgot every find here."), ChatUtils.moduleSignature(this.module));
+      if (announce) {
+         ChatUtils.printChat(Component.literal(this.module.getName() + ": forgot every find here."), ChatUtils.moduleSignature(this.module));
+      }
    }
 
    public int size() {
@@ -343,7 +444,7 @@ public final class HuntMarkers implements ClientAccess {
 
    private Path memoryFile(String key) {
       String safe = key.replaceAll("[^A-Za-z0-9._-]", "_");
-      return ConfigurationManager.ROOT_DIRECTORY.resolve("basehunting").resolve("remembered").resolve(this.module.getName()).resolve(safe + ".csv");
+      return ConfigurationManager.ROOT_DIRECTORY.resolve("basehunting").resolve("remembered").resolve(this.memoryName).resolve(safe + ".csv");
    }
 
    private void save(String key) {
@@ -450,8 +551,9 @@ public final class HuntMarkers implements ClientAccess {
       Vec3 eye = ClientAccess.argusclientMinecraft.player.getEyePosition();
       double range = this.rangeSetting.getValue();
       double rangeSquared = range * range;
-      Color fill = this.fillSetting.getValue();
       Color outline = this.outlineSetting.getValue();
+      // Categories have one colour; their fill is a see-through copy of it.
+      Color fill = this.fillSetting == null ? fillFor(outline) : this.fillSetting.getValue();
       Shape shape = this.shapeSetting.getValue();
       float lineWidth = this.lineWidthSetting.getValue();
       boolean tracers = this.tracersSetting.getValue();

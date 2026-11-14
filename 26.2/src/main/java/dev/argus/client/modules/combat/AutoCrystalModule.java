@@ -38,7 +38,6 @@ import dev.argus.client.settings.options.AutoCrystalSilentChoice;
 import dev.argus.client.settings.options.AutoCrystalWeaknessChoice;
 import dev.argus.client.settings.options.BlockSampleMode;
 import dev.argus.client.settings.options.ItemSwapMode;
-import dev.argus.client.settings.options.SpeedMineRebreakChoice;
 import dev.argus.client.utils.ElapsedTimer;
 import dev.argus.client.utils.LockUtils;
 import dev.argus.client.utils.combat.BoundingBoxUtils;
@@ -340,8 +339,7 @@ public class AutoCrystalModule extends Module {
       }
 
       boolean ignoreMiningBlock = this.shouldIgnoreMiningBlock();
-      Setting<SpeedMineRebreakChoice> rebreakSetting = speedMine.rebreakSetting;
-      if (rebreakSetting.getValue() == SpeedMineRebreakChoice.INSTANT) {
+      if (speedMine.isInstantRebreak()) {
          Setting<Boolean> asyncSetting = speedMine.asyncSetting;
          if (!asyncSetting.getValue()) {
             ignoreMiningBlock = false;

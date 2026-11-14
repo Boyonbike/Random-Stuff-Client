@@ -901,22 +901,21 @@ ElytraFly	argusLiquidLavaLift	Upward speed given at the top of the rise out of l
 ElytraFly	argusLiquidGlideDelay	Ticks to wait before trying again if the server did not start the glide.
 ElytraFly	argusLiquidFirework	Uses a firework from your inventory as soon as the glide starts.
 ElytraFly	volytraInstaDrop	Switching ElytraFly off mid-glide stops all motion so you drop straight down.
-ElytraFly	volytraAutohighway	Locks onto the nearest highway (an axis or diagonal through 0, 0) and flies along it, pathfinding round obstacles.
+ElytraFly	volytraAutohighway	Locks onto the nearest highway (an axis or diagonal through 0, 0) and flies along it, pathfinding round obstacles. If Autonav is on with a trip, Autonav flies instead. Tweaks pause while it flies.
 ElytraFly	volytraHighwayDirection	Which way to fly along the highway, relative to the world centre.
 ElytraFly	volytraHighwayIntelligence	How far ahead Autohighway pathfinds and how quickly it reacts to getting stuck. Higher uses more CPU.
-ElytraFly	volytraAutohighwayKey	Key that switches Autohighway on and off.
-ElytraFly	volytraAutonav	Flies to typed coordinates, or a spot clicked on Xaero's World Map, planning round obstacles.
-ElytraFly	volytraAutonavX	X coordinate for Go.
-ElytraFly	volytraAutonavZ	Z coordinate for Go.
-ElytraFly	volytraAutonavGo	Switch on to start flying to the X and Z above.
-ElytraFly	volytraMapClickButton	Mouse button that picks a destination on Xaero's World Map.
+ElytraFly	volytraAutohighwayKey	Key that switches Autohighway on and off. It does not start flying by itself: you still glide or take off.
+ElytraFly	volytraAutonav	Flies to typed coordinates, or a spot clicked on Xaero's World Map, planning round obstacles. Start a trip with Fly on the Autonav trip card below. Tweaks pause while it flies.
+ElytraFly	volytraAutonavX	X coordinate to fly to. Click to type it, then press Fly on the Autonav trip card.
+ElytraFly	volytraAutonavZ	Z coordinate to fly to. Click to type it, then press Fly on the Autonav trip card.
+ElytraFly	volytraMapClickButton	Mouse button that picks a destination on Xaero's World Map and starts the trip. Needs Xaero's World Map installed.
 ElytraFly	volytraCloseMapOnClick	Closes the world map once a destination is picked.
 ElytraFly	volytraAutonavIntelligence	How hard Autonav searches for a way round obstacles. Higher uses more CPU.
 ElytraFly	volytraAutonavAvoidLava	Plans routes that keep clear of lava.
 ElytraFly	volytraAutonavAvoidWater	Plans routes that keep clear of water.
 ElytraFly	volytraArrivalRadius	How close to the destination counts as arrived; Autonav then hovers until you take over.
 ElytraFly	volytraPrioritiseHighways	Joins and follows a highway when that gets you towards the destination.
-ElytraFly	volytraAutonavKey	Key that switches Autonav on and off.
+ElytraFly	volytraAutonavKey	Key that switches Autonav on and off. It does not start a trip: use Fly on the trip card or click the map.
 ElytraFly	volytraAutonavCancelKey	Key that cancels the current Autonav trip.
 SpeedMine	Blocks	Blocks that SpeedMine is allowed to target.
 SpeedMine	Mode	Any speeds up all blocks; WhiteList only listed blocks; BlackList skips listed blocks.
@@ -2325,3 +2324,11 @@ RedstoneNuker	Prefer	Give extra weight to Fortune or Silk Touch tools.
 RedstoneNuker	AntiBreak	Don't use a tool that is nearly broken.
 RedstoneNuker	AntiBreakPercent	Durability left, in percent, below which a tool is not used.
 RedstoneNuker	SwitchBack	Go back to the slot you had selected once nothing is left to break.
+NBTViewer		Shows item NBT in tooltips and chat.
+NBTViewer	Tooltip	Adds the hovered item's NBT to its tooltip.
+NBTViewer	ShiftOnly	Only shows tooltip NBT while Shift is held.
+NBTViewer	MaxLines	Most NBT lines shown in a tooltip.
+NBTViewer	HeldInChat	Prints the held item's NBT to chat when enabled.
+NBTViewer	OnChange	Prints again whenever the held item changes.
+NBTViewer	Copy	Copies the printed NBT to the clipboard.
+NBTViewer	Full	Includes default components, not just changed ones.

@@ -6,6 +6,9 @@ package dev.argus.client.utils.movement;
  * See THIRD_PARTY_NOTICES.md and licenses/VolytraFly-CC0.txt.
  */
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.argus.client.ClientAccess;
 import dev.argus.client.modules.Keybind;
@@ -17,6 +20,7 @@ import dev.argus.client.settings.Setting;
 import dev.argus.client.utils.KeyUtils;
 import dev.argus.client.utils.chat.ChatUtils;
 import dev.argus.client.utils.movement.volytra.AutonavPlanner;
+import dev.argus.client.utils.movement.volytra.AutonavWaypoint;
 import dev.argus.client.utils.movement.volytra.XaeroMapClicks;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -180,7 +184,6 @@ final class VolytraNavigator {
    final Setting<Boolean> autonav;
    private final Setting<Integer> autonavGotoX;
    private final Setting<Integer> autonavGotoZ;
-   private final Setting<Boolean> autonavGo;
    private final Setting<MapClickButton> autonavButton;
    private final Setting<Boolean> autonavCloseMap;
    private final Setting<Intelligence> autonavIntelligence;
@@ -229,6 +232,11 @@ final class VolytraNavigator {
 
    // Autonav
    private volatile boolean autonavActive;
+   /** A trip paused from the settings page: where it was going, kept until it is resumed or stopped. */
+   private boolean autonavPaused;
+   private int pausedX;
+   private int pausedZ;
+   private final List<AutonavWaypoint> waypoints = new ArrayList<>();
    private double mapDestX;
    private double mapDestZ;
    private double mapCruiseY;
@@ -264,33 +272,47 @@ final class VolytraNavigator {
    VolytraNavigator(VolytraElytraFlyHandler flight) {
       this.flight = flight;
 
-      this.autohighway = flight.addBool("Volytra Autohighway", "volytraAutohighway", false, flight.modeOnly());
-      this.highwayDirection = flight.module.add(new EnumSetting<>("Volytra Highway Direction", HighwayDirection.AWAY_FROM_CENTRE, flight.visibleWith(this.autohighway)));
-      this.highwayDirection.setConfigName("volytraHighwayDirection");
-      this.highwayIntelligence = flight.module.add(new EnumSetting<>("Volytra Highway Intelligence", Intelligence.HIGH, flight.visibleWith(this.autohighway)));
-      this.highwayIntelligence.setConfigName("volytraHighwayIntelligence");
-      this.autohighwayKey = flight.module.add(new KeyBindSetting("Volytra Autohighway Key", "None", flight.modeOnly()));
-      this.autohighwayKey.setConfigName("volytraAutohighwayKey");
+      // Each mode has its own card. Display names are short because the card already says which mode they belong to;
+      // config names are unchanged, so saved settings carry over.
 
-      this.autonav = flight.addBool("Volytra Autonav", "volytraAutonav", false, flight.modeOnly());
-      this.autonavGotoX = flight.addInt("Volytra Autonav X", "volytraAutonavX", 0, -30_000_000, 30_000_000, flight.visibleWith(this.autonav));
-      this.autonavGotoZ = flight.addInt("Volytra Autonav Z", "volytraAutonavZ", 0, -30_000_000, 30_000_000, flight.visibleWith(this.autonav));
-      // Not a stored choice: switching it on starts flying to the typed coordinates and switches it back off.
-      this.autonavGo = flight.addBool("Volytra Autonav Go", "volytraAutonavGo", false, flight.visibleWith(this.autonav));
-      this.autonavGo.setChangeCallback(this::onGoPressed);
-      this.autonavButton = flight.module.add(new EnumSetting<>("Volytra Map Click Button", MapClickButton.MIDDLE, flight.visibleWith(this.autonav)));
-      this.autonavButton.setConfigName("volytraMapClickButton");
-      this.autonavCloseMap = flight.addBool("Volytra Close Map On Click", "volytraCloseMapOnClick", true, flight.visibleWith(this.autonav));
-      this.autonavIntelligence = flight.module.add(new EnumSetting<>("Volytra Autonav Intelligence", Intelligence.HIGH, flight.visibleWith(this.autonav)));
-      this.autonavIntelligence.setConfigName("volytraAutonavIntelligence");
-      this.autonavAvoidLava = flight.addBool("Volytra Autonav Avoid Lava", "volytraAutonavAvoidLava", true, flight.visibleWith(this.autonav));
-      this.autonavAvoidWater = flight.addBool("Volytra Autonav Avoid Water", "volytraAutonavAvoidWater", false, flight.visibleWith(this.autonav));
-      this.autonavArrivalRadius = flight.addDouble("Volytra Arrival Radius", "volytraArrivalRadius", 30.0, 1.0, 50.0, flight.visibleWith(this.autonav));
-      this.autonavPrioritiseHighways = flight.addBool("Volytra Prioritise Highways", "volytraPrioritiseHighways", false, flight.visibleWith(this.autonav));
-      this.autonavKey = flight.module.add(new KeyBindSetting("Volytra Autonav Key", "None", flight.modeOnly()));
+      // Autonav: switch on, then pick a destination (typed or clicked on the map), then how to get there.
+      Setting<Boolean> autonavCard = flight.addGroup("Autonav");
+      autonavCard.groupIcon = "compass";
+      autonavCard.groupSection = VolytraElytraFlyHandler.SECTION_NAV;
+      this.autonav = flight.addBool("Enable Autonav", "volytraAutonav", false, flight.modeOnly());
+      this.autonavKey = flight.module.add(new KeyBindSetting("Autonav Toggle Key", "None", flight.modeOnly()));
       this.autonavKey.setConfigName("volytraAutonavKey");
-      this.autonavCancelKey = flight.module.add(new KeyBindSetting("Volytra Autonav Cancel Key", "None", flight.visibleWith(this.autonav)));
+      // The destination is typed on the "Autonav trip" card under this one, which keeps it in these two settings so it
+      // is saved with the config; they are not listed on the card themselves.
+      this.autonavGotoX = flight.addInt("Destination X", "volytraAutonavX", 0, -30_000_000, 30_000_000, value -> false);
+      this.autonavGotoZ = flight.addInt("Destination Z", "volytraAutonavZ", 0, -30_000_000, 30_000_000, value -> false);
+      // Coordinates are typed, not slid: a slider over the whole world can't land on a block.
+      this.autonavGotoX.disableNumericBounds();
+      this.autonavGotoZ.disableNumericBounds();
+      // Start, Pause and Stop, the trip's status and the saved destinations are on the "Autonav trip" card.
+      this.autonavButton = flight.module.add(new EnumSetting<>("Map Click Button", MapClickButton.MIDDLE, flight.visibleWith(this.autonav)));
+      this.autonavButton.setConfigName("volytraMapClickButton");
+      this.autonavCloseMap = flight.addBool("Close Map On Click", "volytraCloseMapOnClick", true, flight.visibleWith(this.autonav));
+      this.autonavCancelKey = flight.module.add(new KeyBindSetting("Cancel Trip Key", "None", flight.visibleWith(this.autonav)));
       this.autonavCancelKey.setConfigName("volytraAutonavCancelKey");
+      this.autonavArrivalRadius = flight.addDouble("Arrival Radius", "volytraArrivalRadius", 30.0, 1.0, 50.0, flight.visibleWith(this.autonav));
+      this.autonavIntelligence = flight.module.add(new EnumSetting<>("Route Intelligence", Intelligence.HIGH, flight.visibleWith(this.autonav)));
+      this.autonavIntelligence.setConfigName("volytraAutonavIntelligence");
+      this.autonavAvoidLava = flight.addBool("Avoid Lava", "volytraAutonavAvoidLava", true, flight.visibleWith(this.autonav));
+      this.autonavAvoidWater = flight.addBool("Avoid Water", "volytraAutonavAvoidWater", false, flight.visibleWith(this.autonav));
+      this.autonavPrioritiseHighways = flight.addBool("Prioritise Highways", "volytraPrioritiseHighways", false, flight.visibleWith(this.autonav));
+
+      // Autohighway
+      Setting<Boolean> highwayCard = flight.addGroup("Autohighway");
+      highwayCard.groupIcon = "link";
+      highwayCard.groupNote = "An Autonav trip takes over while one is running";
+      this.autohighway = flight.addBool("Enable Autohighway", "volytraAutohighway", false, flight.modeOnly());
+      this.autohighwayKey = flight.module.add(new KeyBindSetting("Autohighway Toggle Key", "None", flight.modeOnly()));
+      this.autohighwayKey.setConfigName("volytraAutohighwayKey");
+      this.highwayDirection = flight.module.add(new EnumSetting<>("Highway Direction", HighwayDirection.AWAY_FROM_CENTRE, flight.visibleWith(this.autohighway)));
+      this.highwayDirection.setConfigName("volytraHighwayDirection");
+      this.highwayIntelligence = flight.module.add(new EnumSetting<>("Highway Intelligence", Intelligence.HIGH, flight.visibleWith(this.autohighway)));
+      this.highwayIntelligence.setConfigName("volytraHighwayIntelligence");
    }
 
    private static Minecraft mc() {
@@ -305,6 +327,7 @@ final class VolytraNavigator {
 
    void onEnable() {
       this.trackedWorld = mc().level;
+      this.autonavPaused = false;
       this.resetHighwayState();
       this.resetAutonavState();
       this.resetRelaunch();
@@ -317,6 +340,7 @@ final class VolytraNavigator {
    }
 
    void onDisable() {
+      this.autonavPaused = false;
       this.releaseDrivingKeys();
       this.resetHighwayState();
       this.highwayPathMob = null;
@@ -340,6 +364,7 @@ final class VolytraNavigator {
       if (world == this.trackedWorld) return;
       if (this.trackedWorld != null) {
          if (this.autonavActive) this.cancelAutonav(false);
+         this.autonavPaused = false;
          this.resetHighwayState();
          this.resetRelaunch();
          this.unstickTicksLeft = 0;
@@ -396,7 +421,10 @@ final class VolytraNavigator {
       this.autonavKeyWasDown = autonavDown;
 
       boolean cancelDown = playing && pressed(this.autonavCancelKey);
-      if (cancelDown && !this.autonavCancelKeyWasDown && this.autonavActive) this.cancelAutonav(true);
+      if (cancelDown && !this.autonavCancelKeyWasDown) {
+         if (this.autonavActive) this.cancelAutonav(true);
+         else if (this.autonavPaused) this.stopTrip();
+      }
       this.autonavCancelKeyWasDown = cancelDown;
    }
 
@@ -1179,42 +1207,140 @@ final class VolytraNavigator {
 
    private void pollMapClick() {
       if (!this.autonav.getValue()) {
+         this.autonavPaused = false;
          this.mapClicks.reset();
          if (this.autonavActive) this.cancelAutonav(true);
          return;
       }
       XaeroMapClicks.Click click = this.mapClicks.poll(mc(), this.autonavButton.getValue().button);
-      if (click != null) this.startAutonav(click.x(), click.z());
+      if (click != null) this.startAutonav(click.x(), click.z(), true);
       String problem = this.mapClicks.takeError();
       if (problem != null) this.say(problem);
    }
 
-   private boolean goHandling;
+   // ---------------------------------------------------------------- the settings page's trip card
 
-   private void onGoPressed() {
-      if (this.goHandling || !this.autonavGo.getValue()) return;
-      this.goHandling = true;
-      try {
-         this.autonavGo.setValue(false);
-         if (mc().player == null || mc().level == null) {
-            this.say("Join a world first.");
-         } else if (!this.flight.module.isToggled() || !this.flight.active()) {
-            this.say("Turn on ElytraFly in Volytra mode first.");
-         } else if (!this.autonav.getValue()) {
-            this.say("Turn on Volytra Autonav first.");
-         } else {
-            this.startAutonav(this.autonavGotoX.getValue(), this.autonavGotoZ.getValue());
+   boolean autonavOn() {
+      return this.autonav.getValue();
+   }
+
+   int typedX() {
+      return this.autonavGotoX.getValue();
+   }
+
+   int typedZ() {
+      return this.autonavGotoZ.getValue();
+   }
+
+   void setTyped(int x, int z) {
+      this.autonavGotoX.setValue(x);
+      this.autonavGotoZ.setValue(z);
+   }
+
+   boolean tripActive() {
+      return this.autonavActive;
+   }
+
+   boolean tripPaused() {
+      return this.autonavPaused && !this.autonavActive;
+   }
+
+   /** Resumes a paused trip, or starts one to the typed coordinates; throws with the reason when it can't. */
+   void startTrip() {
+      if (this.tripPaused()) this.flyTo(this.pausedX, this.pausedZ);
+      else this.flyTo(this.autonavGotoX.getValue(), this.autonavGotoZ.getValue());
+   }
+
+   /** Starts a trip to (x, z), switching Autonav on if it is off; throws with the reason when it can't. */
+   void flyTo(int x, int z) {
+      if (mc().player == null || mc().level == null) throw new IllegalStateException("Join a world first.");
+      if (!this.flight.module.isToggled() || !this.flight.active()) throw new IllegalStateException("Turn on ElytraFly in Volytra mode first.");
+      if (!this.autonav.getValue()) this.autonav.setValue(true);
+      this.autonavPaused = false;
+      this.startAutonav(x, z, false);
+   }
+
+   /** Stops steering but keeps the destination, so Start carries on to it. */
+   void pauseTrip() {
+      if (!this.autonavActive) throw new IllegalStateException("There is no trip to pause.");
+      this.pausedX = (int) Math.floor(this.mapDestX);
+      this.pausedZ = (int) Math.floor(this.mapDestZ);
+      this.cancelAutonav(false);
+      this.autonavPaused = true;
+      this.say("Autonav paused. Press Start to carry on to " + this.pausedX + ", " + this.pausedZ + ".");
+   }
+
+   /** Ends the trip, paused or not. */
+   void stopTrip() {
+      if (!this.autonavActive && !this.autonavPaused) throw new IllegalStateException("There is no trip to stop.");
+      boolean wasPaused = this.tripPaused();
+      this.autonavPaused = false;
+      if (wasPaused) this.say("Autonav stopped.");
+      else this.cancelAutonav(true);
+   }
+
+   /** One line on the trip, for the settings page. */
+   String tripStatus() {
+      LocalPlayer player = mc().player;
+      if (this.tripPaused()) {
+         String to = "to " + this.pausedX + ", " + this.pausedZ;
+         if (player == null) return "Paused " + to;
+         long left = Math.round(Math.hypot(this.pausedX + 0.5 - player.getX(), this.pausedZ + 0.5 - player.getZ()));
+         return "Paused " + to + " · " + left + " blocks left";
+      }
+      if (!this.autonavActive) return this.autohighway.getValue() ? "No trip · Autohighway is flying" : "No trip";
+      String to = "to " + (int) Math.floor(this.mapDestX) + ", " + (int) Math.floor(this.mapDestZ);
+      if (player == null) return "Flying " + to;
+      if (this.mapArrivedAnnounced) return "Arrived · hovering until you move";
+      long left = Math.round(Math.hypot(this.mapDestX - player.getX(), this.mapDestZ - player.getZ()));
+      if (!player.isFallFlying()) return "Start gliding to set off " + to + " · " + left + " blocks";
+      return "Flying " + to + " · " + left + " blocks left" + (this.mapNoRoute ? " · looking for a way through" : "");
+   }
+
+   List<AutonavWaypoint> waypoints() {
+      return List.copyOf(this.waypoints);
+   }
+
+   /** Saves (x, z) under name, replacing a saved destination of the same name. */
+   void saveWaypoint(String name, int x, int z) {
+      String trimmed = name == null ? "" : name.trim();
+      if (trimmed.isEmpty()) trimmed = x + ", " + z;
+      String key = trimmed;
+      this.waypoints.removeIf(waypoint -> waypoint.name().equalsIgnoreCase(key));
+      this.waypoints.add(new AutonavWaypoint(trimmed, x, z));
+   }
+
+   void removeWaypoint(String name) {
+      if (!this.waypoints.removeIf(waypoint -> waypoint.name().equals(name))) throw new IllegalStateException("No saved destination called " + name + ".");
+   }
+
+   JsonArray waypointsJson() {
+      JsonArray array = new JsonArray();
+      for (AutonavWaypoint waypoint : this.waypoints) array.add(waypoint.toJson());
+      return array;
+   }
+
+   void loadWaypoints(JsonElement json) {
+      this.waypoints.clear();
+      if (!(json instanceof JsonArray array)) return;
+      for (JsonElement element : array) {
+         if (!(element instanceof JsonObject object) || !object.has("x") || !object.has("z")) continue;
+         try {
+            int x = object.get("x").getAsInt(), z = object.get("z").getAsInt();
+            String name = object.has("name") ? object.get("name").getAsString() : x + ", " + z;
+            this.waypoints.add(new AutonavWaypoint(name, x, z));
+         } catch (RuntimeException ignored) {
+            // A hand-edited entry that isn't a destination is skipped.
          }
-      } finally {
-         this.goHandling = false;
       }
    }
 
-   private void startAutonav(int blockX, int blockZ) {
+   private void startAutonav(int blockX, int blockZ, boolean fromMap) {
       LocalPlayer player = mc().player;
       ClientLevel world = mc().level;
       if (player == null || world == null) return;
 
+      this.autonavPaused = false;
       this.resetMapRouteState();
       this.flight.resetRamps();
       this.mapDestX = blockX + 0.5;
@@ -1226,7 +1352,7 @@ final class VolytraNavigator {
       this.mapArrivedAnnounced = false;
       this.autonavActive = true;
       this.say("Autonav: flying to " + blockX + ", " + blockZ + ".");
-      if (this.autonavCloseMap.getValue() && mc().gui.screen() != null) mc().gui.setScreen(null);
+      if (fromMap && this.autonavCloseMap.getValue() && mc().gui.screen() != null) mc().gui.setScreen(null);
    }
 
    private void cancelAutonav(boolean announce) {

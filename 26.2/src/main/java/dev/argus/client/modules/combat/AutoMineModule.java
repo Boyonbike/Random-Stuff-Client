@@ -71,16 +71,8 @@ public final class AutoMineModule extends Module {
    private boolean miningActive;
 
    private float getBreakDelayValue() {
-      Setting<Boolean> noDelaySetting = speedMine.noBreakDelaySetting;
-      if (!noDelaySetting.getValue() && antiCheat.isMovementSyncEnabled()) {
-         ElapsedTimer timerSnapshot = speedMine.getBreakDelayTimer();
-         float normalizedElapsed = (float)timerSnapshot.elapsedMillis() / 300.0F;
-         float remaining = 1.0F - Mth.clamp(normalizedElapsed, 0.0F, 1.0F);
-         float scaled = remaining * 6.0F;
-         return scaled + 1.5F;
-      } else {
-         return 0.0F;
-      }
+      // SpeedMine has no vanilla break delay to wait out.
+      return 0.0F;
    }
 
    private boolean updateMiningState() {
@@ -243,24 +235,14 @@ public final class AutoMineModule extends Module {
 
    private int getBreakMode() {
       if (antiCheat.isMovementSyncEnabled()) {
-         Setting<Boolean> noDelaySetting = speedMine.noBreakDelaySetting;
-         Boolean noBreakDelay = noDelaySetting.getValue();
-         int modeValue;
-         if (noBreakDelay) {
-            modeValue = 2;
-         } else {
-            modeValue = 6;
-         }
-
-         return modeValue;
+         return 2;
       } else {
          return this.isExtraBreakEnabled() ? 1 : 0;
       }
    }
 
    public boolean isExtraBreakEnabled() {
-      Setting<Boolean> extraBreakSetting = speedMine.extraBreakSetting;
-      return extraBreakSetting.getValue();
+      return speedMine.doubleBreakSetting.getValue();
    }
 
    public static void bindReferencedModules(ModuleRegistry modules) {
