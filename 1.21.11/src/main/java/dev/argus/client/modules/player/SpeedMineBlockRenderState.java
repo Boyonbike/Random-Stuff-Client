@@ -8,7 +8,6 @@ import dev.argus.client.render.ColorUtils;
 import dev.argus.client.render.RenderUtils;
 import dev.argus.client.render.WorldBoxRenderer;
 import dev.argus.client.settings.options.SpeedMineColorModeChoice;
-import dev.argus.client.settings.options.SpeedMineRebreakChoice;
 import dev.argus.client.settings.options.SpeedMineRenderModeChoice;
 import dev.argus.client.utils.FloatAnimation;
 import dev.argus.client.utils.world.WorldUtils;
@@ -37,7 +36,7 @@ public class SpeedMineBlockRenderState implements ClientAccess {
 
    public void render(WorldRenderEvent event) {
       this.updateFade();
-      boolean instantRebreak = speedMineModule.rebreakSetting.getValue() == SpeedMineRebreakChoice.INSTANT;
+      boolean instantRebreak = speedMineModule.isInstantRebreak();
       if (!this.isEmpty() || instantRebreak && speedMineModule.airSetting.getValue() || speedMineModule.fadeSetting.getValue()) {
          BlockState state = ClientAccess.argusclientMinecraft.level.getBlockState(this.blockPos);
          VoxelShape shape = state.getShape(ClientAccess.argusclientMinecraft.level, this.blockPos);

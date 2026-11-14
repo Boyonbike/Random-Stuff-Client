@@ -20,6 +20,7 @@ public final class BaseHuntingModules {
          new ODMobModule(),
          new RotationDetectorModule(),
          new HuntersESPModule(),
+         new FlowESPModule(),
          new StashReportModule(),
          new WaypointCoordsModule(),
          new LodestoneCoordsModule(),

@@ -160,3 +160,23 @@ the source headers provide the required attribution.
 
 The **AutoSponge** module and AntiCoords' clean-screenshot hooks are ported from
 Comet's Smart Sponge and Anti Coords (Comet original code, CC0-1.0).
+
+## THM Addons Speedmine (via Comet)
+
+- **Project:** THM Addons (a Meteor Client add-on), as adapted for the Comet add-on
+- **Authors:** THM Addons contributors; air mining adapted from Quiettee Utils;
+  Auto Mine target selection ported from BlackOut (KassuK and OLEPOSSU,
+  <https://github.com/KassuK1/BlackOut>, GPL-3.0)
+- **Source:** <https://github.com/Leonn170709/THM-Addons>
+- **Licence:** GNU GPL version 3 only (GPL-3.0-only)
+- **Full licence text:** [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt)
+
+The **SpeedMine** module (`SpeedMineModule.java`, `SpeedMineTiming.java`,
+`SpeedMinePolicy.java`, `SpeedMineRange.java` and the air-mining hook in
+`PlayerMixin.java`) is Comet's Speedmine, which Boyonabike adapted from THM
+Addons for Minecraft 26.2 in October 2026. It replaced Argus's own SpeedMine
+on 14 November 2026, rewritten for Argus's settings, events, rotation manager,
+friends, MultiTask and box renderer, with Argus's own SpeedMine safety checks,
+swap options and render modes (`SpeedMineBlockRenderState.java`,
+`SpeedMineRenderQueue.java`) layered on top. These files are covered by GPL-3.0-only on the same
+terms as the AutoWasp files above.

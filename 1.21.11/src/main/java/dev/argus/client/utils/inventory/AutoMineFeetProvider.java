@@ -9,7 +9,6 @@ import dev.argus.client.modules.combat.AutoMineMiningTracker;
 import dev.argus.client.modules.combat.AutoMineModule;
 import dev.argus.client.modules.player.SpeedMineModule;
 import dev.argus.client.settings.Setting;
-import dev.argus.client.settings.options.SpeedMineRebreakChoice;
 import dev.argus.client.utils.entity.PlayerStateUtils;
 import dev.argus.client.utils.world.BlockInteractionUtils;
 import dev.argus.client.utils.world.WorldUtils;
@@ -242,11 +241,8 @@ public final class AutoMineFeetProvider extends AutoMineProviderBase {
                retainPreviousBreak = position.equals(previousSnapshot.getMiningPos());
             }
 
-            boolean instantRebreak = speedMine.rebreakSetting.getValue() == SpeedMineRebreakChoice.INSTANT;
+            boolean instantRebreak = speedMine.isInstantRebreak();
             boolean fastRebreak = false;
-            if (this.isAlreadyMining(position) && !WorldUtils.isAir(position)) {
-               fastRebreak = speedMine.rebreakSetting.getValue() == SpeedMineRebreakChoice.FAST;
-            }
 
             if (suppressPreviousBreak) {
                retainPreviousBreak = false;

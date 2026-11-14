@@ -12,7 +12,6 @@ import dev.argus.client.managers.ServerStateManager;
 import dev.argus.client.managers.WorldStateManager;
 import dev.argus.client.modules.player.SpeedMineModule;
 import dev.argus.client.settings.Setting;
-import dev.argus.client.settings.options.SpeedMineRebreakChoice;
 import dev.argus.client.utils.ElapsedTimer;
 import dev.argus.client.utils.inventory.EnchantmentUtils;
 import java.util.ArrayList;
@@ -55,8 +54,7 @@ public final class BlockBreakTracker implements ClientAccess {
       ClientAccess.argusclientMinecraft.execute(() -> {
          for (BlockBreakEntry entry : this.entries) {
             if (position.equals(entry.getPosition())) {
-               Setting<SpeedMineRebreakChoice> rebreakSetting = speedMine.rebreakSetting;
-               if (rebreakSetting.getValue() != SpeedMineRebreakChoice.INSTANT) {
+               if (!speedMine.isInstantRebreak()) {
                   entry.setProgress(0.0F);
                   entry.setAirTicks(0);
                }
@@ -143,7 +141,7 @@ public final class BlockBreakTracker implements ClientAccess {
       if (!alreadyTracked) {
          boolean extraBreak = false;
          if (!hasExtraBreak) {
-            Setting<Boolean> extraBreakSetting = speedMine.extraBreakSetting;
+            Setting<Boolean> extraBreakSetting = speedMine.doubleBreakSetting;
             Boolean extraBreakEnabled = extraBreakSetting.getValue();
             extraBreak = extraBreakEnabled;
          }

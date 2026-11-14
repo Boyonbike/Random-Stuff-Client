@@ -74,7 +74,7 @@ public enum NukerShapeChoice implements NamedEntry {
       @Override
       public List collectPositions(NukerModule nukerModule) {
          NukerBlockQueue queueSnapshot = nukerModule.getBlockQueue();
-         Setting<Boolean> extraBreakSettingRef = NukerShapeChoice.speedMineModule.extraBreakSetting;
+         Setting<Boolean> extraBreakSettingRef = NukerShapeChoice.speedMineModule.doubleBreakSetting;
          Boolean extraBreakEnabled = extraBreakSettingRef.getValue();
          boolean extraBreakFlag = extraBreakEnabled;
          return queueSnapshot.getNextPositions(extraBreakFlag);

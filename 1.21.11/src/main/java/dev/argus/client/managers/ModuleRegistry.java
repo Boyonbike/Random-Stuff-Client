@@ -100,6 +100,7 @@ import dev.argus.client.modules.misc.CustomDeathTextModule;
 import dev.argus.client.modules.misc.ExtraScreenshotModule;
 import dev.argus.client.modules.misc.AntiCoordsModule;
 import dev.argus.client.modules.misc.ExtraTabModule;
+import dev.argus.client.modules.misc.NBTViewerModule;
 import dev.argus.client.modules.misc.HeavenModule;
 import dev.argus.client.modules.misc.KillEffectsModule;
 import dev.argus.client.modules.misc.MiddleClickModule;
@@ -544,6 +545,10 @@ public final class ModuleRegistry extends Registry<Module> implements ClientAcce
 
       if (!this.registerModule(new ExtraTabModule())) {
          throw new IllegalStateException("Registration rejected ExtraTabModule");
+      }
+
+      if (!this.registerModule(new NBTViewerModule())) {
+         throw new IllegalStateException("Registration rejected NBTViewerModule");
       }
 
       if (!this.registerModule(new FakeLagModule())) {

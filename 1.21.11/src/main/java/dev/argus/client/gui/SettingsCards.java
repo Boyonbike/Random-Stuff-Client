@@ -19,7 +19,9 @@ import net.minecraft.client.input.MouseButtonEvent;
  * each placed where it belongs next to the settings it works with.
  */
 final class SettingsCards {
-    private static final float GAP = 8;
+    private static final float GAP = 8, TABS = 22;
+    /** The tab picked on each module's page, kept while the game runs. */
+    private static final java.util.Map<String, String> PICKED_TAB = new java.util.HashMap<>();
 
     private static final class Section {
         final Setting<?> group;
@@ -28,6 +30,8 @@ final class SettingsCards {
         final int size;
         /** Title and icon for a card that isn't one of the module's own groups, or null. */
         final String title, icon;
+        /** The tab this card sits under (see {@link Setting#groupSection}), or null on a page without tabs. */
+        String tab;
         float body;
         float top;
         /** Fold state for a card that isn't a settings group (a group folds through its own setting). */
@@ -38,6 +42,8 @@ final class SettingsCards {
         boolean open() { return group != null ? group.isExpanded() : !folded; }
         void toggle() { if (group != null) group.expanded = !group.isExpanded(); else folded = !folded; }
         String title() { return title != null ? title : group == null ? "General" : GuiState.title(group.getName()); }
+        /** A group's card follows its header's visibility live, so cards for another mode come and go as it changes. */
+        boolean shown() { return group == null || group.isVisible(); }
     }
 
     private final UiScreen host;
@@ -48,6 +54,8 @@ final class SettingsCards {
     private final String focusSetting;
     /** Top of each card this frame, for clicks on the header. */
     private final java.util.Map<Object, Float> tops = new java.util.IdentityHashMap<>();
+    /** Top of the tab strip this frame, or NaN when the page has none. */
+    private float tabsTop = Float.NaN;
     private float x, w;
 
     SettingsCards(UiScreen host, Module module, String focusSetting) {
@@ -63,7 +71,9 @@ final class SettingsCards {
         }
         add(host, group, members);
         addBetterChat(host);
-        for (Section section : sections) section.body = section.list.contentHeight() + 6;
+        assignTabs();
+        // A folded card starts folded rather than shrinking into place, so jumping to a setting lands where it should.
+        for (Section section : sections) section.body = section.open() ? section.list.contentHeight() + 6 : 0;
     }
 
     /**
@@ -74,13 +84,94 @@ final class SettingsCards {
     /** Every card in display order. */
     private List<Object> order() {
         List<Object> order = new ArrayList<>();
-        for (InlineCard card : inline) if (anchors.get(card).after() == null && !anchors.get(card).atEnd()) order.add(card);
+        String tab = currentTab();
+        for (InlineCard card : inline) if (onPage(card, tab) && anchors.get(card).after() == null && !anchors.get(card).atEnd()) order.add(card);
         for (Section s : sections) {
+            if (!s.shown() || !onTab(s.tab, tab)) { s.body = 0; continue; }
             order.add(s);
-            if (s.group != null) for (InlineCard card : inline) if (s.group.getName().equals(anchors.get(card).after())) order.add(card);
+            if (s.group != null) for (InlineCard card : inline) if (onPage(card, tab) && s.group.getName().equals(anchors.get(card).after())) order.add(card);
         }
-        for (InlineCard card : inline) if (!order.contains(card)) order.add(card);
+        // A card placed after a group that is hidden right now stays hidden with it.
+        for (InlineCard card : inline) if (onPage(card, tab) && !order.contains(card) && (anchors.get(card).after() == null || !anchorHidden(card))) order.add(card);
         return order;
+    }
+
+    // ---- tabs --------------------------------------------------------------------------------
+
+    /**
+     * Gives every card its tab: a group naming one starts it, the groups after it follow it, and cards before the
+     * first named tab (the General card) sit under the first tab.
+     */
+    private void assignTabs() {
+        String current = null, first = null;
+        for (Section s : sections) {
+            if (s.group != null && s.group.groupSection != null) current = s.group.groupSection;
+            s.tab = current;
+            if (first == null) first = current;
+        }
+        for (Section s : sections) if (s.tab == null) s.tab = first;
+        if (focusSetting != null) for (Section s : sections)
+            if (s.tab != null && s.members.stream().anyMatch(m -> m.getName().equals(focusSetting))) PICKED_TAB.put(module.getName(), s.tab);
+    }
+
+    /** The tabs shown right now, in page order: empty unless at least two visible cards name different tabs. */
+    private List<String> tabs() {
+        List<String> tabs = new ArrayList<>();
+        for (Section s : sections) if (s.tab != null && s.shown() && !tabs.contains(s.tab)) tabs.add(s.tab);
+        return tabs.size() >= 2 ? tabs : List.of();
+    }
+
+    private String currentTab() {
+        List<String> tabs = tabs();
+        if (tabs.isEmpty()) return null;
+        String picked = PICKED_TAB.get(module.getName());
+        return tabs.contains(picked) ? picked : tabs.get(0);
+    }
+
+    private static boolean onTab(String cardTab, String current) { return current == null || cardTab == null || cardTab.equals(current); }
+
+    /** A tool card's tab: the tab of the group it sits under, or the first or last tab for one at either end. */
+    private String tabOf(InlineCard card) {
+        Placement placement = anchors.get(card);
+        if (sections.isEmpty()) return null;
+        if (placement.after() != null) {
+            for (Section s : sections) if (s.group != null && s.group.getName().equals(placement.after())) return s.tab;
+            return null;
+        }
+        return placement.atEnd() ? sections.get(sections.size() - 1).tab : sections.get(0).tab;
+    }
+
+    private boolean onPage(InlineCard card, String tab) { return card.visible() && onTab(tabOf(card), tab); }
+    private boolean onPage(InlineCard card) { return onPage(card, currentTab()); }
+
+    private float tabsHeight() { return tabs().isEmpty() ? 0 : TABS + GAP; }
+
+    private void drawTabs(GuiGraphics g, int mx, int my, UiTheme t, List<String> tabs, String current, float x, float y, float w, float clipTop, float clipBottom) {
+        float segment = w / tabs.size();
+        UiDraw.rounded(g, x, y, w, TABS, TABS / 2, t.crust());
+        float thumb = UiAnim.smooth("tabs." + module.getName(), tabs.indexOf(current), 16);
+        UiDraw.rounded(g, x + 2 + thumb * segment, y + 2, segment - 4, TABS - 4, (TABS - 4) / 2, UiDraw.alpha(t.accent(), .22f));
+        for (int i = 0; i < tabs.size(); i++) {
+            boolean hover = UiDraw.over(mx, my, x + i * segment, y, segment, TABS) && my >= clipTop && my < clipBottom;
+            float hv = UiAnim.smooth("tabs." + module.getName() + "." + i, hover ? 1 : 0, 18);
+            int colour = tabs.get(i).equals(current) ? t.accent() : UiDraw.mix(t.muted(), t.text(), hv);
+            UiDraw.center(g, UiDraw.fit(tabs.get(i), segment - 10), x + i * segment, y + TABS / 2, segment, colour);
+        }
+    }
+
+    /** Picks the tab under the click, if the click is on the tab strip. */
+    private boolean tabClicked(double mx, double my) {
+        List<String> tabs = tabs();
+        if (tabs.isEmpty() || Float.isNaN(tabsTop) || !UiDraw.over(mx, my, x, tabsTop, w, TABS)) return false;
+        int index = Math.clamp((int) ((mx - x) / (w / tabs.size())), 0, tabs.size() - 1);
+        stopEditing();
+        PICKED_TAB.put(module.getName(), tabs.get(index));
+        return true;
+    }
+
+    private boolean anchorHidden(InlineCard card) {
+        for (Section s : sections) if (s.group != null && s.group.getName().equals(anchors.get(card).after())) return !s.shown();
+        return false;
     }
 
     private float bodyOf(Object item) { return item instanceof Section s ? s.body : ((InlineCard) item).shown(); }
@@ -88,11 +179,15 @@ final class SettingsCards {
     private void add(UiScreen host, Setting<?> group, List<Setting<?>> members) { add(host, module, group, members, null, null); }
 
     private void add(UiScreen host, Module owner, Setting<?> group, List<Setting<?>> members, String title, String icon) {
-        // A group whose header is hidden is kept for config only (e.g. ESP's old target cards).
-        if (members.isEmpty() || group != null && !group.isVisible()) return;
+        // A group whose header is hidden stays out of view (e.g. ESP's old target cards, kept for config only, or a
+        // mode's cards while another mode is picked); see Section.shown.
+        if (members.isEmpty()) return;
         boolean focused = focusSetting != null && members.stream().anyMatch(s -> s.getName().equals(focusSetting));
         List<Setting<?>> copy = List.copyOf(members);
         sections.add(new Section(group, new SettingsList(host, owner, focused ? focusSetting : null, copy), copy, title, icon));
+        // A card that starts folded still opens when search jumps to one of its settings (after the list, which
+        // resets every group's fold when it has a setting to focus).
+        if (focused && group != null) group.expanded = true;
     }
 
     /**
@@ -109,19 +204,24 @@ final class SettingsCards {
             add(host, betterChat, null, settings.subList(span.from(), span.to()), span.title(), span.icon());
     }
 
-    private String icon(int index) { Section s = sections.get(index); return s.icon != null ? s.icon : s.group == null ? "sliders" : "misc"; }
+    private String icon(int index) {
+        Section s = sections.get(index);
+        if (s.icon != null) return s.icon;
+        if (s.group == null) return "sliders";
+        return s.group.groupIcon != null ? s.group.groupIcon : "misc";
+    }
 
     private static boolean changed(Setting<?> setting) { return !Objects.equals(setting.getValue(), setting.getDefaultValue()); }
 
     /** Settings in a card that differ from their defaults. */
     int changed(int index) { return (int) sections.get(index).members.stream().filter(SettingsCards::changed).count(); }
-    int changed() { int total = 0; for (int i = 0; i < sections.size(); i++) total += changed(i); return total; }
+    int changed() { int total = 0; for (int i = 0; i < sections.size(); i++) if (sections.get(i).shown()) total += changed(i); return total; }
 
     /** Restores every setting on the page to its default and flashes the rows that changed. */
     int resetAll() {
         stopEditing();
         int count = 0;
-        for (Section s : sections) for (Setting<?> setting : s.members) if (changed(setting)) {
+        for (Section s : sections) if (s.shown()) for (Setting<?> setting : s.members) if (changed(setting)) {
             setting.reset(); count++;
             UiAnim.set("set." + System.identityHashCode(setting) + ".reset", 1);
         }
@@ -135,14 +235,14 @@ final class SettingsCards {
 
     /** Total height of all cards (with their current, animated body heights). */
     float height() {
-        float total = 0;
+        float total = tabsHeight();
         for (Object item : order()) total += UiDraw.CARD_HEAD + bodyOf(item) + GAP;
         return Math.max(0, total - GAP);
     }
 
     /** Offset of the card holding the focused setting, for scrolling it into view. */
     float focusOffset() {
-        float offset = 0;
+        float offset = tabsHeight();
         for (Object item : order()) {
             if (item instanceof Section s && focusSetting != null && s.list.showsSetting(focusSetting)) return offset;
             offset += UiDraw.CARD_HEAD + bodyOf(item) + GAP;
@@ -153,7 +253,18 @@ final class SettingsCards {
     void render(GuiGraphics g, int mx, int my, float delta, UiTheme t, float x, float y, float w, float clipTop, float clipBottom) {
         this.x = x; this.w = w;
         tops.clear();
+        List<String> tabs = tabs();
+        tabsTop = Float.NaN;
+        if (!tabs.isEmpty()) {
+            float appear = host.appear(2), opacity = UiRender.opacity;
+            UiRender.opacity = opacity * appear;
+            try { drawTabs(g, mx, my, t, tabs, currentTab(), x, y, w, clipTop, clipBottom); } finally { UiRender.opacity = opacity; }
+            tabsTop = y;
+            y += TABS + GAP;
+        }
         List<Object> order = order();
+        // Tool cards on another tab put their text fields away.
+        for (InlineCard card : inline) if (!order.contains(card)) card.hide();
         for (int index = 0; index < order.size(); index++) {
             Object item = order.get(index);
             Section s = item instanceof Section section ? section : null;
@@ -168,6 +279,7 @@ final class SettingsCards {
             if (s != null) {
                 int count = open ? s.list.rowCount() : s.size, changed = changed(sections.indexOf(s));
                 subtitle = count + (count == 1 ? " setting" : " settings") + (changed > 0 ? " · " + changed + " changed" : "");
+                if (s.group != null && s.group.groupNote != null) subtitle += " · " + s.group.groupNote;
             } else subtitle = card.subtitle();
             if (!open) subtitle += " · click to show";
             String icon = s != null ? icon(sections.indexOf(s)) : card.icon();
@@ -206,7 +318,7 @@ final class SettingsCards {
 
     void popup(GuiGraphics g, UiTheme t, int width, int height) {
         for (Section s : sections) if (s.body > 1) s.list.popup(g, t, width, height);
-        for (InlineCard card : inline) if (card.open && card.shown() > 1) card.popup(g, t, width, height);
+        for (InlineCard card : inline) if (onPage(card) && card.open && card.shown() > 1) card.popup(g, t, width, height);
     }
 
     String message() {
@@ -224,7 +336,8 @@ final class SettingsCards {
     boolean mouseClicked(MouseButtonEvent event, boolean doubled, float clipTop, float clipBottom) {
         double my = event.y();
         if (my < clipTop || my >= clipBottom) { stopEditing(); return false; }
-        for (InlineCard card : inline) if (card.open && card.shown() > 1 && card.mouseClicked(event, doubled)) { for (Section s : sections) s.list.stopEditing(); return true; }
+        if (event.button() == 0 && tabClicked(event.x(), my)) return true;
+        for (InlineCard card : inline) if (onPage(card) && card.open && card.shown() > 1 && card.mouseClicked(event, doubled)) { for (Section s : sections) s.list.stopEditing(); return true; }
         for (Object item : order()) {
             Float top = tops.get(item);
             if (top != null && event.button() == 0 && UiDraw.over(event.x(), my, x, top, w, UiDraw.CARD_HEAD)) {

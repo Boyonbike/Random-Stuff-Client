@@ -548,7 +548,18 @@ public class ElytraFlyModule extends Module {
    }
 
    @Override
+   public JsonElement toJson() {
+      JsonElement json = super.toJson();
+      if (json instanceof JsonObject object && this.volytra != null) object.add("autonavWaypoints", this.volytra.autonavWaypointsJson());
+      return json;
+   }
+
+   @Override
    public void fromJson(JsonElement json) {
+      // Partial module presets without saved destinations must not erase the ones already saved.
+      if (json instanceof JsonObject object && object.has("autonavWaypoints") && this.volytra != null) {
+         this.volytra.loadAutonavWaypoints(object.get("autonavWaypoints"));
+      }
       // Configs saved before the Volytra tweak settings existed predate the new default.
       // Migrate those once to Volytra Fly; later configs keep the user's explicit mode.
       boolean legacyConfig = true;
@@ -679,7 +690,15 @@ public class ElytraFlyModule extends Module {
       this.modeHandlers.register(ElytraFlyModule.ModeChoice.BOUNCE, new BounceElytraFlyHandler(this));
       this.modeHandlers.register(ElytraFlyModule.ModeChoice.NEWGRIM, new NewGrimElytraFlyHandler(this));
       this.modeHandlers.register(ElytraFlyModule.ModeChoice.VANILLA, new VanillaElytraFlyHandler(this));
-      this.modeHandlers.register(ElytraFlyModule.ModeChoice.VOLYTRA, new VolytraElytraFlyHandler(this));
+      this.volytra = new VolytraElytraFlyHandler(this);
+      this.modeHandlers.register(ElytraFlyModule.ModeChoice.VOLYTRA, this.volytra);
+   }
+
+   private VolytraElytraFlyHandler volytra;
+
+   /** Volytra mode's handler, whichever mode is picked: the settings page's Autonav trip card works through it. */
+   public VolytraElytraFlyHandler volytra() {
+      return this.volytra;
    }
 
    public enum InfDurabilityChoice implements NamedEntry {
