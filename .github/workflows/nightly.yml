@@ -1,0 +1,148 @@
+name: Nightly
+
+# Builds every version branch and publishes the jars as the rolling "nightly" pre-release.
+# Runs nightly (skipped when no branch has changed since the last nightly), on demand,
+# and when this workflow file changes.
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if no branch has changed
+        type: boolean
+        default: true
+  push:
+    branches: ['1.21.11']
+    paths: ['.github/workflows/nightly.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  BRANCHES: '1.21.11 26.1.2 26.2 26.3'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      heads: ${{ steps.diff.outputs.heads }}
+    steps:
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          heads=""
+          for b in $BRANCHES; do
+            sha=$(git ls-remote "https://github.com/${{ github.repository }}" "refs/heads/$b" | cut -c1-12)
+            heads="$heads$b@$sha "
+          done
+          heads="${heads% }"
+          echo "heads=$heads" >> "$GITHUB_OUTPUT"
+          previous=$(gh release view nightly --repo "${{ github.repository }}" --json body -q .body 2>/dev/null | sed -n 's/^<!-- heads: \(.*\) -->$/\1/p')
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$previous" = "$heads" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No branch changed since the last nightly ($heads)."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: '1.21.11'
+            java: '21'
+          - version: '26.1.2'
+            java: '25'
+          - version: '26.2'
+            java: '25'
+          - version: '26.3'
+            java: '25'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.version }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        working-directory: ${{ matrix.version }}
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon --stacktrace
+
+      - name: Collect jar
+        run: |
+          mkdir -p dist
+          cp ${{ matrix.version }}/build/libs/Argus-*-mc${{ matrix.version }}.jar dist/
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: argus-${{ matrix.version }}
+          path: dist/*.jar
+          if-no-files-found: error
+
+  release:
+    needs: [check, build]
+    if: ${{ !cancelled() && needs.check.outputs.changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish nightly pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEADS: ${{ needs.check.outputs.heads }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          shopt -s nullglob
+          jars=(dist/*.jar)
+          if [ ${#jars[@]} -eq 0 ]; then
+            echo "No jars were built; leaving the previous nightly in place."
+            exit 1
+          fi
+          date=$(date -u +%Y-%m-%d)
+          {
+            echo "Automated nightly build from the latest commit on each version branch ($date, UTC)."
+            echo
+            echo "These builds are untested. Pick the jar that matches your Minecraft version."
+            echo
+            echo "| Branch | Commit |"
+            echo "| --- | --- |"
+            for h in $HEADS; do
+              echo "| \`${h%@*}\` | [\`${h#*@}\`](https://github.com/${{ github.repository }}/commit/${h#*@}) |"
+            done
+            if [ "$BUILD_RESULT" != "success" ]; then
+              echo
+              echo "**Some versions failed to build and are missing from this nightly.** See the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+            fi
+            echo
+            echo "<!-- heads: $HEADS -->"
+          } > notes.md
+          gh release delete nightly --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create nightly "${jars[@]}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --prerelease \
+            --title "Nightly $date" \
+            --notes-file notes.md
